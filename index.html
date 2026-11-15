@@ -1,0 +1,3042 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#0f172a">
+    <title>Hard-Explorer: Labirin Perangkat Keras</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+            overflow: hidden;
+            touch-action: manipulation;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            overscroll-behavior: none;
+        }
+        html, body { height: 100%; height: 100dvh; margin: 0; }
+        body.w-screen { width: 100%; }
+        body.h-screen { height: 100dvh; }
+        input, textarea { user-select: text; -webkit-user-select: text; }
+        #canvas-container, #touch-controls, #ctrl-bar { touch-action: none; }
+
+        /* ---- Kontrol sentuh (joystick analog + tombol) ---- */
+        #canvas-container { position: relative; }
+        #touch-controls { display: none; position: absolute; inset: 0; z-index: 10; pointer-events: none; }
+        body.touch-ui #touch-controls { display: block; }
+        body.touch-ui #ctrl-bar { display: none; }
+        #joy-base, #joy-knob, .touch-btn { box-sizing: border-box; }
+        #joy-base {
+            position: absolute; left: max(14px, env(safe-area-inset-left)); bottom: max(14px, env(safe-area-inset-bottom));
+            width: 120px; height: 120px; border-radius: 50%;
+            background: rgba(15, 23, 42, 0.45); border: 2px solid rgba(148, 163, 184, 0.45);
+            pointer-events: auto; touch-action: none;
+        }
+        #joy-knob {
+            position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -26px 0 0 -26px;
+            border-radius: 50%; background: rgba(56, 189, 248, 0.7); border: 2px solid rgba(186, 230, 253, 0.9);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.5); pointer-events: none;
+        }
+        .touch-btn {
+            position: absolute; border-radius: 50%; font-weight: 700; color: #fff;
+            display: flex; align-items: center; justify-content: center;
+            pointer-events: auto; touch-action: none; border: 2px solid rgba(255,255,255,0.5);
+            box-shadow: 0 3px 10px rgba(0,0,0,0.5);
+        }
+        #tc-jump {
+            right: max(16px, env(safe-area-inset-right)); bottom: max(22px, env(safe-area-inset-bottom));
+            width: 72px; height: 72px; font-size: 26px; background: rgba(16, 185, 129, 0.65);
+        }
+        #tc-jump.pressed { background: rgba(52, 211, 153, 0.95); }
+        #tc-action {
+            right: max(100px, calc(env(safe-area-inset-right) + 84px)); bottom: max(34px, env(safe-area-inset-bottom));
+            width: 56px; height: 56px; font-size: 22px; background: rgba(217, 119, 6, 0.7);
+        }
+        #tc-action.pressed { background: rgba(251, 191, 36, 0.95); }
+        @media (max-height: 420px) {
+            #joy-base { width: 96px; height: 96px; }
+            #joy-knob { width: 42px; height: 42px; margin: -21px 0 0 -21px; }
+            #tc-jump { width: 60px; height: 60px; font-size: 22px; }
+            #tc-action { width: 48px; height: 48px; font-size: 18px; right: 88px; }
+        }
+        h1, h2, h3, .font-game {
+            font-family: 'Fredoka', sans-serif;
+        }
+        /* Custom Scrollbar for Modals */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #1e293b; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+        .btn-rpg {
+            transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 4px 0 rgba(0,0,0,0.4);
+        }
+        .btn-rpg:active {
+            transform: translateY(3px);
+            box-shadow: 0 1px 0 rgba(0,0,0,0.4);
+        }
+        .wood-panel {
+            background: linear-gradient(180deg, #3b2618 0%, #26170e 100%);
+            border: 3px solid #784b2a;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.6), inset 0 2px 4px rgba(255,255,255,0.1);
+        }
+        .tech-panel {
+            background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+            border: 2px solid #38bdf8;
+            box-shadow: 0 0 20px rgba(56, 189, 248, 0.2);
+        }
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-6px); }
+        }
+        .animate-float {
+            animation: float 3s ease-in-out infinite;
+        }
+    </style>
+</head>
+<body class="w-screen h-screen flex flex-col items-center justify-center relative bg-slate-950">
+
+    <!-- ==================== 1. MAIN MENU SCREEN ==================== -->
+    <div id="screen-menu" class="w-full h-full flex flex-col items-center justify-between p-4 sm:p-8 relative overflow-hidden bg-gradient-to-b from-amber-900/40 via-slate-900 to-slate-950">
+        <!-- Decorative Background Elements -->
+        <div class="absolute inset-0 opacity-20 pointer-events-none" style="background-image: radial-gradient(#fbbf24 1px, transparent 1px); background-size: 32px 32px;"></div>
+        <div class="absolute top-10 right-10 w-48 h-48 bg-amber-500/20 rounded-full blur-3xl pointer-events-none"></div>
+        <div class="absolute bottom-10 left-10 w-64 h-64 bg-sky-500/20 rounded-full blur-3xl pointer-events-none"></div>
+
+        <!-- Top Info Bar -->
+        <div class="w-full max-w-4xl flex justify-between items-center z-10">
+            <div class="bg-slate-900/80 border border-slate-700 px-3 py-1.5 rounded-xl text-xs sm:text-sm text-amber-400 font-semibold flex items-center gap-2">
+                <span>🎓</span> SMK Kelas X TJKT • Fase E
+            </div>
+            <button id="btn-sound-toggle" class="bg-slate-800 hover:bg-slate-700 border border-slate-600 p-2 rounded-xl text-sm flex items-center gap-1.5 transition">
+                <span id="sound-icon">🔊</span> <span class="hidden sm:inline">Suara</span>
+            </button>
+        </div>
+
+        <!-- Center Title & Menu Card -->
+        <div class="z-10 flex flex-col items-center max-w-lg w-full my-auto">
+            <!-- Emblem / Logo -->
+            <div class="wood-panel px-6 py-4 rounded-2xl text-center mb-4 animate-float relative">
+                <div class="text-xs font-bold uppercase tracking-widest text-amber-400 mb-1">Petualangan Teknik Komputer</div>
+                <h1 class="text-3xl sm:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-b from-amber-200 to-amber-500 drop-shadow">
+                    HARD-EXPLORER
+                </h1>
+                <div class="mt-1 inline-block bg-amber-950/90 border border-amber-600/50 px-3 py-0.5 rounded-full text-xs text-amber-200">
+                    Labirin Perangkat Keras & K3LH
+                </div>
+            </div>
+
+            <!-- Active Mapel Badge -->
+            <div class="w-full bg-slate-900/90 border border-slate-700 rounded-xl p-2.5 mb-4 text-center shadow-lg">
+                <span class="text-xs text-slate-400 block">Paket Soal Aktif:</span>
+                <span id="menu-active-subject" class="text-sm sm:text-base font-bold text-sky-400">Dasar-Dasar TJKT (Perangkat Keras Komputer)</span>
+            </div>
+
+            <!-- Main Action Buttons -->
+            <div class="w-full flex flex-col gap-3">
+                <button id="btn-continue-saved" onclick="resumeSavedGame()" class="hidden btn-rpg w-full py-3 px-6 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-slate-950 font-game font-bold text-base sm:text-lg rounded-xl border-b-4 border-orange-800 flex items-center justify-center gap-2">
+                    <span>⏯️</span> <span id="btn-continue-label">LANJUTKAN PROGRES (Lantai 1)</span>
+                </button>
+
+                <button onclick="openHeroSelect()" class="btn-rpg w-full py-3.5 px-6 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-400 hover:to-green-500 text-white font-game font-bold text-lg sm:text-xl rounded-xl border-b-4 border-emerald-800 flex items-center justify-center gap-2">
+                    <span>▶</span> MULAI PETUALANGAN BARU
+                </button>
+
+                <div class="grid grid-cols-2 gap-2 sm:gap-3">
+                    <button onclick="openModal('modal-flipbook')" class="btn-rpg py-3 px-2 sm:px-3 bg-gradient-to-b from-sky-600 to-blue-700 hover:from-sky-500 hover:to-blue-600 text-white font-game font-semibold text-xs sm:text-sm rounded-xl border-b-4 border-blue-900 flex items-center justify-center gap-1.5">
+                        <span>📖</span> Flipbook
+                    </button>
+                    <button onclick="openTeacherRoom()" class="btn-rpg py-3 px-2 sm:px-3 bg-gradient-to-b from-purple-600 to-indigo-700 hover:from-purple-500 hover:to-indigo-600 text-white font-game font-semibold text-xs sm:text-sm rounded-xl border-b-4 border-indigo-950 flex items-center justify-center gap-1.5">
+                        <span>⚙️</span> Ruang Guru
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <button onclick="openModal('modal-howto')" class="btn-rpg py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs sm:text-sm rounded-xl border border-slate-600 flex items-center justify-center gap-1.5">
+                        <span>❓</span> Cara Main & K3LH
+                    </button>
+                    <button onclick="openModal('modal-about')" class="btn-rpg py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs sm:text-sm rounded-xl border border-slate-600 flex items-center justify-center gap-1.5">
+                        <span>🏫</span> Info Rancangan
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Character Preview Strip -->
+        <div class="z-10 flex items-center justify-center gap-4 sm:gap-8 mt-2">
+            <div class="text-center">
+                <div id="preview-hero-warrior" class="w-12 h-12 sm:w-14 sm:h-14 mx-auto bg-slate-800/80 p-1 rounded-xl border border-amber-500/40 flex items-center justify-center"></div>
+                <span class="text-[10px] text-slate-400">Raka</span>
+            </div>
+            <div class="text-center">
+                <div id="preview-hero-mage" class="w-12 h-12 sm:w-14 sm:h-14 mx-auto bg-slate-800/80 p-1 rounded-xl border border-sky-500/40 flex items-center justify-center"></div>
+                <span class="text-[10px] text-slate-400">Sinta</span>
+            </div>
+            <div class="text-center">
+                <div id="preview-hero-healer" class="w-12 h-12 sm:w-14 sm:h-14 mx-auto bg-slate-800/80 p-1 rounded-xl border border-emerald-500/40 flex items-center justify-center"></div>
+                <span class="text-[10px] text-slate-400">Ayu</span>
+            </div>
+            <div class="text-center">
+                <div id="preview-hero-archer" class="w-12 h-12 sm:w-14 sm:h-14 mx-auto bg-slate-800/80 p-1 rounded-xl border border-rose-500/40 flex items-center justify-center"></div>
+                <span class="text-[10px] text-slate-400">Bima</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== 2. HERO SELECTION SCREEN ==================== -->
+    <div id="screen-hero" class="hidden w-full h-full flex flex-col items-center justify-between p-4 sm:p-6 bg-slate-950 overflow-y-auto">
+        <div class="w-full max-w-4xl flex items-center justify-between">
+            <button onclick="showScreen('screen-menu')" class="bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-xl text-sm font-semibold border border-slate-600">
+                ← Kembali
+            </button>
+            <h2 class="text-xl sm:text-2xl font-game font-bold text-amber-400">Pilih Teknisi Pahlawanmu</h2>
+            <div class="w-20"></div>
+        </div>
+
+        <!-- Student Name Input -->
+        <div class="w-full max-w-md my-3">
+            <label class="block text-xs text-slate-400 mb-1">Nama Siswa / Kelompok:</label>
+            <input type="text" id="input-player-name" placeholder="Masukkan nama kamu..." value="Siswa TJKT" class="w-full bg-slate-900 border border-slate-700 focus:border-sky-500 rounded-xl px-4 py-2.5 text-sm text-white outline-none">
+        </div>
+
+        <!-- 4 Heroes Grid (Inspired by Video) -->
+        <div id="hero-cards-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 w-full max-w-5xl my-auto">
+            <!-- Populated by JS -->
+        </div>
+
+        <div class="w-full max-w-md mt-4">
+            <button onclick="startGame()" class="btn-rpg w-full py-3.5 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-slate-950 font-game font-bold text-lg rounded-xl border-b-4 border-orange-800">
+                MASUK KE LABIRIN PERANGKAT KERAS 🚀
+            </button>
+        </div>
+    </div>
+
+    <!-- ==================== 3. GAMEPLAY CANVAS SCREEN ==================== -->
+    <div id="screen-game" class="hidden w-full h-full flex flex-col relative bg-slate-950">
+        <!-- Top HUD -->
+        <div class="w-full bg-slate-900/95 border-b border-slate-800 px-3 py-2 flex items-center justify-between z-20">
+            <!-- Hero Status -->
+            <div class="flex items-center gap-2.5">
+                <div id="hud-hero-icon" class="w-10 h-10 rounded-xl bg-slate-800 border border-amber-500/50 p-0.5 flex items-center justify-center overflow-hidden"></div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <span id="hud-player-name" class="font-bold text-xs sm:text-sm text-white">Raka</span>
+                        <span id="hud-hero-role" class="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-semibold">Hardware Warrior</span>
+                    </div>
+                    <!-- HP Bar -->
+                    <div class="w-28 sm:w-36 h-3 bg-slate-800 rounded-full overflow-hidden mt-1 border border-slate-700 relative">
+                        <div id="hud-hp-bar" class="h-full bg-gradient-to-r from-rose-500 to-emerald-500 transition-all duration-300" style="width: 100%;"></div>
+                        <span id="hud-hp-text" class="absolute inset-0 text-[9px] font-bold text-center leading-3 text-white drop-shadow">100 / 100</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Floor & Score Info -->
+            <div class="flex items-center gap-2 sm:gap-4">
+                <div class="bg-slate-800/90 border border-slate-700 px-2.5 py-1 rounded-xl text-center">
+                    <span class="text-[10px] text-slate-400 block">Lantai</span>
+                    <span id="hud-floor" class="text-xs sm:text-sm font-bold text-sky-400">1 / 5</span>
+                </div>
+                <div class="bg-slate-800/90 border border-slate-700 px-2.5 py-1 rounded-xl text-center">
+                    <span class="text-[10px] text-slate-400 block">Skor</span>
+                    <span id="hud-score" class="text-xs sm:text-sm font-bold text-amber-400">0</span>
+                </div>
+                <button id="btn-game-sound-toggle" title="Musik & Suara" class="bg-slate-800 hover:bg-slate-700 border border-slate-600 p-2 rounded-xl text-xs sm:text-sm">
+                    🔊
+                </button>
+                <button onclick="openModal('modal-flipbook')" title="Buka Modul Flipbook" class="bg-sky-600/30 hover:bg-sky-600/50 border border-sky-500/50 p-2 rounded-xl text-xs sm:text-sm">
+                    📖
+                </button>
+                <button onclick="confirmExitGame()" title="Keluar ke Menu" class="bg-rose-600/30 hover:bg-rose-600/50 border border-rose-500/50 p-2 rounded-xl text-xs sm:text-sm">
+                    ✖
+                </button>
+            </div>
+        </div>
+
+        <!-- Objective Banner -->
+        <div id="hud-objective" class="bg-indigo-950/90 border-b border-indigo-800/60 px-3 py-1 text-center text-xs text-indigo-200 z-10">
+            Misi Lantai 1: Kumpulkan data & kalahkan Bug ESD untuk membuka Pintu Gerbang!
+        </div>
+
+        <!-- Canvas Area -->
+        <div id="canvas-container" class="flex-1 w-full relative overflow-hidden">
+            <canvas id="gameCanvas" class="block w-full h-full"></canvas>
+
+            <!-- Floating Toast Notification inside Game -->
+            <!-- Kontrol sentuh: joystick analog + tombol (hanya tampil di layar sentuh) -->
+            <div id="touch-controls" class="absolute inset-0 z-10 pointer-events-none">
+                <div id="joy-base"><div id="joy-knob"></div></div>
+                <button id="tc-action" class="touch-btn" aria-label="Aksi">⚡</button>
+                <button id="tc-jump" class="touch-btn" aria-label="Lompat">▲</button>
+            </div>
+
+            <div id="game-toast" class="hidden absolute top-4 left-1/2 -translate-x-1/2 bg-slate-900/95 border border-amber-400 text-amber-200 px-4 py-2 rounded-full text-xs sm:text-sm font-bold shadow-xl z-20 pointer-events-none">
+                +50 Poin Komponen!
+            </div>
+        </div>
+
+        <!-- On-Screen Touch / Mobile Controls -->
+        <div id="ctrl-bar" class="w-full bg-slate-900/95 border-t border-slate-800 px-4 py-2.5 flex items-center justify-between z-20">
+            <div class="flex items-center gap-3">
+                <button id="ctrl-left" class="w-14 h-12 sm:w-16 sm:h-14 bg-slate-800 active:bg-sky-600 border border-slate-600 rounded-2xl flex items-center justify-center text-xl font-bold shadow-lg">
+                    ◀
+                </button>
+                <button id="ctrl-right" class="w-14 h-12 sm:w-16 sm:h-14 bg-slate-800 active:bg-sky-600 border border-slate-600 rounded-2xl flex items-center justify-center text-xl font-bold shadow-lg">
+                    ▶
+                </button>
+            </div>
+
+            <div class="hidden md:block text-xs text-slate-400">
+                Gunakan tombol <kbd class="bg-slate-800 px-1.5 py-0.5 rounded border border-slate-600">A</kbd>/<kbd class="bg-slate-800 px-1.5 py-0.5 rounded border border-slate-600">D</kbd> atau Panah untuk bergerak, <kbd class="bg-slate-800 px-1.5 py-0.5 rounded border border-slate-600">Spasi</kbd>/<kbd class="bg-slate-800 px-1.5 py-0.5 rounded border border-slate-600">W</kbd> untuk Lompat.
+            </div>
+
+            <div class="flex items-center gap-3">
+                <button id="ctrl-action" class="px-4 h-12 sm:h-14 bg-amber-600 active:bg-amber-500 border border-amber-400 rounded-2xl flex items-center justify-center text-xs sm:text-sm font-bold text-white shadow-lg">
+                    ⚡ AKSI / BUKA
+                </button>
+                <button id="ctrl-jump" class="w-14 h-12 sm:w-16 sm:h-14 bg-emerald-600 active:bg-emerald-500 border border-emerald-400 rounded-2xl flex items-center justify-center text-xl font-bold text-white shadow-lg">
+                    ▲
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== 4. BATTLE & QUESTION MODAL (DOOR / MONSTER) ==================== -->
+    <div id="modal-quiz" class="hidden fixed inset-0 bg-slate-950/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="tech-panel w-full max-w-2xl rounded-2xl p-5 sm:p-6 flex flex-col max-h-[92vh] overflow-y-auto">
+            <!-- Header: Monster VS Hero or Door Unlock -->
+            <div class="flex items-center justify-between border-b border-slate-700 pb-3 mb-4">
+                <div class="flex items-center gap-2">
+                    <span id="quiz-badge-icon" class="text-2xl">👾</span>
+                    <div>
+                        <span id="quiz-context-title" class="text-xs font-bold uppercase tracking-wider text-sky-400 block">Tantangan Monster Bug</span>
+                        <h3 id="quiz-topic-label" class="text-sm sm:text-base font-bold text-white">Tujuan Pembelajaran 1: Komponen Utama</h3>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <div id="quiz-timer-box" class="bg-slate-800 border border-slate-600 px-3 py-1 rounded-xl text-xs font-bold text-amber-400">
+                        ⏱️ <span id="quiz-timer">30</span>d
+                    </div>
+                </div>
+            </div>
+
+            <!-- Visual Battle Bar (Visible when fighting Monster) -->
+            <div id="quiz-battle-arena" class="bg-slate-900/90 border border-slate-800 rounded-xl p-3 mb-4 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <div id="battle-hero-emoji" class="w-12 h-12 rounded-xl bg-slate-800 p-1 border border-emerald-500/40 flex items-center justify-center"></div>
+                    <div>
+                        <div class="text-xs font-bold text-emerald-400" id="battle-hero-name">Hero</div>
+                        <div class="w-24 h-2 bg-slate-800 rounded-full overflow-hidden mt-1">
+                            <div id="battle-hero-hp" class="h-full bg-emerald-500" style="width: 100%"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="text-xs font-game font-bold text-amber-500 px-2 py-1 bg-amber-500/10 rounded-lg border border-amber-500/30">VS</div>
+                <div class="flex items-center gap-2 text-right">
+                    <div>
+                        <div class="text-xs font-bold text-rose-400" id="battle-monster-name">Monster ESD</div>
+                        <div class="w-24 h-2 bg-slate-800 rounded-full overflow-hidden mt-1">
+                            <div id="battle-monster-hp" class="h-full bg-rose-500" style="width: 100%"></div>
+                        </div>
+                    </div>
+                    <span id="battle-monster-emoji" class="text-3xl">⚡</span>
+                </div>
+            </div>
+
+            <!-- Question Text -->
+            <div class="bg-slate-800/80 border border-slate-700 rounded-xl p-4 mb-4">
+                <p id="quiz-question-text" class="text-sm sm:text-base font-semibold text-white leading-relaxed">
+                    Pertanyaan akan muncul di sini...
+                </p>
+            </div>
+
+            <!-- Options Grid (A, B, C, D) -->
+            <div id="quiz-options-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                <!-- Populated by JS -->
+            </div>
+
+            <!-- Feedback & Explanation Box -->
+            <div id="quiz-feedback" class="hidden rounded-xl p-3.5 mb-4 text-xs sm:text-sm">
+                <div id="quiz-feedback-title" class="font-bold mb-1"></div>
+                <p id="quiz-feedback-desc" class="text-slate-200"></p>
+            </div>
+
+            <!-- Bottom Actions: Hint & Continue -->
+            <div class="flex items-center justify-between pt-2 border-t border-slate-800">
+                <button id="btn-quiz-hint" onclick="useQuizHint()" class="bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-300 px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5">
+                    <span>💡</span> Petunjuk (<span id="hint-count">2</span>)
+                </button>
+                <button id="btn-quiz-continue" onclick="closeQuizModal()" class="hidden btn-rpg bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold px-5 py-2 rounded-xl text-xs sm:text-sm">
+                    Lanjutkan Petualangan →
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== 5. TEACHER ROOM MODAL (EDIT SOAL SEPUASNYA) ==================== -->
+    <div id="modal-teacher" class="hidden fixed inset-0 bg-slate-950/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="wood-panel w-full max-w-4xl rounded-2xl p-5 sm:p-6 flex flex-col max-h-[92vh]">
+            <div class="flex items-center justify-between border-b border-amber-800/60 pb-3 mb-4">
+                <div>
+                    <h2 class="text-xl sm:text-2xl font-game font-bold text-amber-300">⚙️ Ruang Guru: Kustomisasi Materi & Soal</h2>
+                    <p class="text-xs text-amber-100/80">Edit mata pelajaran, tambah/ubah soal pilihan ganda untuk tiap lantai labirin.</p>
+                </div>
+                <button onclick="closeModal('modal-teacher')" class="bg-amber-950 hover:bg-amber-900 border border-amber-700 px-3 py-1.5 rounded-xl text-sm font-bold text-amber-200">
+                    ✕ Tutup
+                </button>
+            </div>
+
+            <!-- Subject & Class Metadata -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4 bg-amber-950/50 p-3 rounded-xl border border-amber-800/50">
+                <div>
+                    <label class="block text-xs text-amber-300 font-semibold mb-1">Nama Paket / Mata Pelajaran:</label>
+                    <input type="text" id="teacher-subject-name" class="w-full bg-slate-900 border border-amber-700/60 rounded-lg px-3 py-2 text-xs sm:text-sm text-white">
+                </div>
+                <div class="flex flex-wrap items-end gap-2">
+                    <button onclick="addNewQuestion()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1">
+                        <span>➕</span> Tambah Soal Baru
+                    </button>
+                    <button onclick="exportQuestionsJSON()" class="bg-sky-600 hover:bg-sky-500 text-white px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1">
+                        <span>📤</span> Ekspor JSON
+                    </button>
+                    <button onclick="resetDefaultQuestions()" class="bg-rose-700 hover:bg-rose-600 text-white px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1">
+                        <span>↺</span> Reset Default
+                    </button>
+                </div>
+            </div>
+
+            <!-- Questions Editor List -->
+            <div id="teacher-questions-list" class="flex-1 overflow-y-auto space-y-3 pr-1">
+                <!-- Populated dynamically -->
+            </div>
+
+            <div class="mt-4 pt-3 border-t border-amber-800/60 flex justify-between items-center">
+                <span id="teacher-status-msg" class="text-xs text-emerald-400 font-semibold"></span>
+                <button onclick="saveTeacherChanges()" class="btn-rpg bg-gradient-to-r from-emerald-500 to-green-600 text-white font-game font-bold px-6 py-2.5 rounded-xl text-sm">
+                    💾 Simpan & Terapkan ke Game
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== 6. MODUL FLIPBOOK & LKPD MODAL ==================== -->
+    <div id="modal-flipbook" class="hidden fixed inset-0 bg-slate-950/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="tech-panel w-full max-w-3xl rounded-2xl p-5 sm:p-6 flex flex-col max-h-[90vh]">
+            <div class="flex items-center justify-between border-b border-slate-700 pb-3 mb-3">
+                <div class="flex items-center gap-2">
+                    <span class="text-2xl">📖</span>
+                    <div>
+                        <h2 class="text-lg sm:text-xl font-game font-bold text-sky-400">Modul Flipbook: Mengenal Perangkat Keras Komputer</h2>
+                        <p class="text-xs text-slate-400">Dasar-Dasar TJKT Kelas X • Fase E (Dilengkapi Peta Interaktif & Video YouTube)</p>
+                    </div>
+                </div>
+                <button onclick="closeModal('modal-flipbook')" class="bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-600">
+                    ✕ Tutup
+                </button>
+            </div>
+
+            <!-- Progress Strip -->
+            <div id="fb-progress-strip" class="flex gap-1 mb-3"></div>
+
+            <!-- Flipbook Page Content -->
+            <div id="flipbook-content" class="flex-1 overflow-y-auto bg-slate-900/90 border border-slate-800 rounded-xl p-4 sm:p-6">
+                <!-- Populated by JS -->
+            </div>
+
+            <!-- Flipbook Page Navigation -->
+            <div class="mt-4 flex items-center justify-between">
+                <button onclick="changeFlipbookPage(-1)" id="btn-fb-prev" class="bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold border border-slate-600">
+                    ← Sebelumnya
+                </button>
+                <span id="fb-page-indicator" class="text-xs sm:text-sm font-bold text-amber-400">Halaman 1 / 11</span>
+                <button onclick="changeFlipbookPage(1)" id="btn-fb-next" class="bg-sky-600 hover:bg-sky-500 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold text-white">
+                    Lanjut →
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== 7. HOW TO PLAY MODAL ==================== -->
+    <div id="modal-howto" class="hidden fixed inset-0 bg-slate-950/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="tech-panel w-full max-w-lg rounded-2xl p-6">
+            <h2 class="text-xl font-game font-bold text-amber-400 mb-3">❓ Cara Bermain & Misi K3LH</h2>
+            <ul class="space-y-2.5 text-xs sm:text-sm text-slate-300 mb-5">
+                <li class="flex items-start gap-2"><span class="text-sky-400 font-bold">1.</span> <span><strong>Bergerak & Melompat:</strong> Jelajahi 5 lantai labirin perangkat keras komputer. Kumpulkan koin data & komponen.</span></li>
+                <li class="flex items-start gap-2"><span class="text-rose-400 font-bold">2.</span> <span><strong>Kalahkan Monster Bug & ESD:</strong> Sentuh monster untuk bertarung! Jawab soal analisis perangkat keras untuk menyerang monster.</span></li>
+                <li class="flex items-start gap-2"><span class="text-emerald-400 font-bold">3.</span> <span><strong>Buka Pintu Gerbang:</strong> Di ujung tiap lantai terdapat Pintu Terkunci. Jawab pertanyaan studi kasus untuk lanjut ke lantai berikutnya.</span></li>
+                <li class="flex items-start gap-2"><span class="text-amber-400 font-bold">4.</span> <span><strong>Gunakan Modul Flipbook:</strong> Jika ragu menjawab soal, klik ikon buku (📖) kapan saja untuk membaca ringkasan materi!</span></li>
+            </ul>
+            <button onclick="closeModal('modal-howto')" class="w-full py-2.5 bg-sky-600 hover:bg-sky-500 rounded-xl font-bold text-sm">Mengerti, Siap Berpetualang!</button>
+        </div>
+    </div>
+
+    <!-- ==================== 8. ABOUT / RANCANGAN MODAL ==================== -->
+    <div id="modal-about" class="hidden fixed inset-0 bg-slate-950/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="tech-panel w-full max-w-lg rounded-2xl p-6 max-h-[85vh] overflow-y-auto">
+            <h2 class="text-xl font-game font-bold text-sky-400 mb-2">🏫 Identitas Media Pembelajaran</h2>
+            <p class="text-xs text-slate-400 mb-4">Dikembangkan berdasarkan Rancangan Media Pembelajaran Kelompok 4 — Pendidikan Teknologi Informasi, FKIP Universitas Lampung (2026).</p>
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5 text-xs space-y-2 mb-4">
+                <div><strong class="text-amber-400">Nama Media:</strong> Hard-Explorer (Versi Game Petualangan)</div>
+                <div><strong class="text-amber-400">Mata Pelajaran:</strong> Dasar-Dasar Teknik Jaringan Komputer dan Telekomunikasi (TJKT)</div>
+                <div><strong class="text-amber-400">Sasaran:</strong> SMK Kelas X / Fase E</div>
+                <div><strong class="text-amber-400">Model Pengembangan:</strong> ADDIE (Analysis, Design, Development, Implementation, Evaluation)</div>
+                <div><strong class="text-amber-400">Profil Lulusan:</strong> Penalaran Kritis, Kolaborasi, dan Kemandirian</div>
+                <div><strong class="text-amber-400">Tim Penyusun:</strong> Melani Puspa Indira, Agdaria Haliza Madya, Obie Pramudya, Zapriyan Hadari</div>
+            </div>
+            <button onclick="closeModal('modal-about')" class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 rounded-xl font-bold text-sm border border-slate-600">Tutup</button>
+        </div>
+    </div>
+
+    <!-- ==================== 9. VICTORY / REFLECTION MODAL ==================== -->
+    <div id="modal-victory" class="hidden fixed inset-0 bg-slate-950/95 backdrop-blur-md z-50 flex items-center justify-center p-4">
+        <div class="wood-panel w-full max-w-lg rounded-2xl p-6 text-center max-h-[92vh] overflow-y-auto">
+            <div class="text-5xl mb-2">🏆</div>
+            <h2 id="victory-title" class="text-2xl sm:text-3xl font-game font-bold text-amber-400 mb-1">MISI SELESAI!</h2>
+            <p id="victory-subtitle" class="text-xs sm:text-sm text-amber-100/80 mb-4">Kamu telah menaklukkan Labirin Perangkat Keras & K3LH!</p>
+
+            <div class="grid grid-cols-3 gap-2 bg-slate-950/70 border border-amber-700/50 rounded-xl p-3 mb-4">
+                <div>
+                    <span class="text-[10px] text-slate-400 block">Skor Akhir</span>
+                    <span id="final-score" class="text-lg font-bold text-amber-400">0</span>
+                </div>
+                <div>
+                    <span class="text-[10px] text-slate-400 block">Jawaban Benar</span>
+                    <span id="final-correct" class="text-lg font-bold text-emerald-400">0/0</span>
+                </div>
+                <div>
+                    <span class="text-[10px] text-slate-400 block">Predikat</span>
+                    <span id="final-grade" class="text-sm font-bold text-sky-400">Ahli TJKT</span>
+                </div>
+            </div>
+
+            <!-- Reflection Form (Skenario Tahap 5: Refleksi Pembelajaran) -->
+            <div class="text-left bg-slate-900/90 border border-slate-700 rounded-xl p-3.5 mb-4">
+                <label class="block text-xs font-bold text-sky-400 mb-1">📝 Refleksi Singkat Siswa (Tahap Akhir Pembelajaran):</label>
+                <p class="text-[11px] text-slate-400 mb-2">Tuliskan 1 hal penting yang kamu pelajari tentang komponen komputer atau keselamatan kerja (K3LH/ESD):</p>
+                <textarea id="reflection-input" rows="2" placeholder="Contoh: Saya jadi tahu pentingnya menyentuh casing logam untuk membuang listrik statis sebelum memegang RAM..." class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-white outline-none focus:border-sky-500"></textarea>
+            </div>
+
+            <div class="flex flex-col sm:flex-row gap-2">
+                <button onclick="copyResultSummary()" class="flex-1 py-2.5 bg-sky-600 hover:bg-sky-500 rounded-xl font-bold text-xs sm:text-sm text-white">
+                    📋 Salin Laporan Hasil
+                </button>
+                <button onclick="returnToMainMenu()" class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-xl font-bold text-xs sm:text-sm text-white">
+                    🏠 Menu Utama
+                </button>
+            </div>
+            <p id="copy-feedback" class="text-xs text-emerald-400 mt-2 hidden">Hasil & refleksi berhasil disalin ke clipboard!</p>
+        </div>
+    </div>
+
+    <!-- Custom Confirm Exit Modal (No native confirm()) -->
+    <div id="modal-confirm-exit" class="hidden fixed inset-0 bg-slate-950/80 z-50 flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 max-w-sm w-full text-center">
+            <h3 class="text-lg font-bold text-white mb-2">Simpan Progres & Keluar?</h3>
+            <p class="text-xs text-slate-400 mb-4">Progres lantai dan skormu akan disimpan otomatis sehingga bisa dilanjutkan nanti dari menu utama.</p>
+            <div class="flex gap-3">
+                <button onclick="closeModal('modal-confirm-exit')" class="flex-1 py-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-xs font-bold">Batal</button>
+                <button onclick="saveAndExitGame()" class="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-xs font-bold">Simpan & Keluar</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /* =========================================================================
+           1. AUDIO ENGINE & BACKGROUND MUSIC (TONE.JS)
+           ========================================================================= */
+        let soundEnabled = true;
+        let synth = null;
+        let bgmSynth = null;
+        let bgmBass = null;
+        let bgmLoop = null;
+        let bgmArp = null, bgmPad = null, hitNoise = null, hitThump = null;
+        let bgmMode = 'menu';
+        let audioInitialized = false;
+
+        function initAudio() {
+            if (audioInitialized || typeof Tone === 'undefined') return;
+            try {
+                synth = new Tone.PolySynth(Tone.Synth, {
+                    oscillator: { type: "triangle" },
+                    envelope: { attack: 0.01, decay: 0.1, sustain: 0.1, release: 0.2 }
+                }).toDestination();
+                synth.volume.value = -8;
+
+                // Musik latar: progresi Am - F - C - G, lead lembut, arpeggio, bass, dan ketukan ringan
+                bgmSynth = new Tone.Synth({
+                    oscillator: { type: "triangle" },
+                    envelope: { attack: 0.02, decay: 0.25, sustain: 0.25, release: 0.6 }
+                }).toDestination();
+                bgmSynth.volume.value = -14;
+
+                bgmArp = new Tone.Synth({
+                    oscillator: { type: "sine" },
+                    envelope: { attack: 0.02, decay: 0.3, sustain: 0.1, release: 0.5 }
+                }).toDestination();
+                bgmArp.volume.value = -24;
+
+                bgmPad = new Tone.PolySynth(Tone.Synth, {
+                    oscillator: { type: "sine" },
+                    envelope: { attack: 0.4, decay: 0.3, sustain: 0.6, release: 1.2 }
+                }).toDestination();
+                bgmPad.volume.value = -26;
+
+                bgmBass = new Tone.Synth({
+                    oscillator: { type: "triangle" },
+                    envelope: { attack: 0.01, decay: 0.25, sustain: 0.35, release: 0.25 }
+                }).toDestination();
+                bgmBass.volume.value = -14;
+
+                hitNoise = new Tone.NoiseSynth({
+                    noise: { type: "white" },
+                    envelope: { attack: 0.001, decay: 0.22, sustain: 0 }
+                }).toDestination();
+                hitNoise.volume.value = -10;
+
+                hitThump = new Tone.MembraneSynth({
+                    pitchDecay: 0.06, octaves: 5,
+                    envelope: { attack: 0.001, decay: 0.3, sustain: 0, release: 0.1 }
+                }).toDestination();
+                hitThump.volume.value = -4;
+
+                const chords = [["A3", "C4", "E4"], ["F3", "A3", "C4"], ["C4", "E4", "G4"], ["G3", "B3", "D4"]];
+                const roots = ["A1", "F1", "C2", "G1"];
+                const lead = [
+                    "E5", null, null, null, "C5", null, "D5", null, "E5", null, null, null, "A4", null, "C5", null,
+                    "C5", null, null, null, "A4", null, "C5", null, "F5", null, null, "E5", "C5", null, null, null,
+                    "G4", null, "C5", null, "E5", null, null, null, "D5", null, "C5", null, "G4", null, null, null,
+                    "D5", null, "B4", null, "G4", null, "A4", null, "B4", null, null, null, null, null, null, null
+                ];
+                let step = 0;
+
+                bgmLoop = new Tone.Loop((time) => {
+                    if (!soundEnabled) return;
+                    const adv = bgmMode === 'adventure';
+                    const pos = step % 64;
+                    const bar = Math.floor(pos / 16) % 4;
+                    const inBar = pos % 16;
+                    const chord = chords[bar];
+
+                    if (inBar === 0) bgmPad.triggerAttackRelease(chord, "1m", time);
+                    if (lead[pos]) bgmSynth.triggerAttackRelease(lead[pos], "8n", time);
+                    if (adv && inBar % 4 === 0) {
+                        const arpNote = chord[(inBar / 4) % 3];
+                        bgmArp.triggerAttackRelease(arpNote.replace(/\d/, d => String(+d + 1)), "8n", time);
+                    }
+                    if (inBar === 0 || (adv && (inBar === 6 || inBar === 10))) {
+                        bgmBass.triggerAttackRelease(roots[bar], "8n", time);
+                    }
+                    step++;
+                }, "16n").start(0);
+
+                audioInitialized = true;
+            } catch (e) {}
+        }
+
+        function startBgm(mode = 'menu') {
+            bgmMode = mode;
+            if (!soundEnabled) return;
+            try {
+                initAudio();
+                if (Tone.context.state !== 'running') Tone.start();
+                Tone.Transport.bpm.value = mode === 'adventure' ? 112 : 84;
+                if (Tone.Transport.state !== 'started') {
+                    Tone.Transport.start();
+                }
+            } catch (e) {}
+        }
+
+        function toggleSoundState() {
+            soundEnabled = !soundEnabled;
+            const icon = soundEnabled ? '🔊' : '🔇';
+            document.getElementById('sound-icon').textContent = icon;
+            const gameBtn = document.getElementById('btn-game-sound-toggle');
+            if (gameBtn) gameBtn.textContent = icon;
+
+            if (soundEnabled) {
+                startBgm(bgmMode);
+            } else if (typeof Tone !== 'undefined' && Tone.Transport.state === 'started') {
+                Tone.Transport.pause();
+            }
+        }
+
+        function playSfx(type) {
+            if (!soundEnabled) return;
+            try {
+                initAudio();
+                if (Tone.context.state !== 'running') Tone.start();
+                const now = Tone.now();
+                if (type === 'jump') {
+                    synth.triggerAttackRelease("C4", "16n", now);
+                    synth.triggerAttackRelease("G4", "16n", now + 0.05);
+                } else if (type === 'coin') {
+                    synth.triggerAttackRelease("E5", "32n", now);
+                    synth.triggerAttackRelease("B5", "16n", now + 0.06);
+                } else if (type === 'hit') {
+                    // sengatan statis: semburan noise + dentuman rendah + nada turun
+                    hitNoise.triggerAttackRelease("8n", now);
+                    hitThump.triggerAttackRelease("G1", "8n", now);
+                    synth.triggerAttackRelease("E4", "32n", now);
+                    synth.triggerAttackRelease("A2", "16n", now + 0.06);
+                } else if (type === 'correct') {
+                    synth.triggerAttackRelease(["C5", "E5", "G5"], "8n", now);
+                } else if (type === 'wrong') {
+                    synth.triggerAttackRelease(["C3", "Db3"], "4n", now);
+                } else if (type === 'door') {
+                    synth.triggerAttackRelease(["D4", "F#4", "A4", "D5"], "4n", now);
+                }
+            } catch (e) { /* Ignore audio context autoplay restrictions */ }
+        }
+
+        document.getElementById('btn-sound-toggle').addEventListener('click', toggleSoundState);
+        document.getElementById('btn-game-sound-toggle').addEventListener('click', toggleSoundState);
+
+        // Start menu BGM on first user interaction anywhere
+        document.addEventListener('pointerdown', () => {
+            if (soundEnabled && typeof Tone !== 'undefined' && Tone.Transport.state !== 'started') {
+                startBgm(typeof gameState !== 'undefined' && gameState.running ? 'adventure' : 'menu');
+            }
+        }, { once: true });
+
+        /* =========================================================================
+           2. CARTOON HEROES SVG GENERATOR & DATA (KSATRIA, PENYIHIR, DOKTER, PEMANAH)
+           ========================================================================= */
+        function getHeroCartoonSVG(heroId) {
+            if (heroId === 'warrior') {
+                // Raka - Ksatria Teknisi (Baju zirah, ikat kepala/helm ksatria, pedang & perisai)
+                return `<svg viewBox="0 0 80 80" class="w-full h-full">
+                    <rect x="6" y="6" width="68" height="68" rx="16" fill="#451a03"/>
+                    <!-- Pedang di punggung -->
+                    <rect x="57" y="12" width="6" height="36" rx="2" transform="rotate(22 60 30)" fill="#e2e8f0"/>
+                    <rect x="50" y="34" width="16" height="4" rx="2" transform="rotate(22 58 36)" fill="#f59e0b"/>
+                    <!-- Badan Zirah Ksatria -->
+                    <path d="M22 68 C22 50 58 50 58 68 Z" fill="#b45309"/>
+                    <rect x="28" y="51" width="24" height="17" rx="4" fill="#d97706"/>
+                    <circle cx="40" cy="59" r="3.5" fill="#fef08a"/>
+                    <!-- Rambut Coklat Jabrik Ksatria -->
+                    <path d="M20 34 L16 20 L26 24 L32 13 L40 22 L48 13 L54 24 L64 20 L60 34 Z" fill="#78350f"/>
+                    <!-- Wajah Kartun Chibi -->
+                    <rect x="24" y="25" width="32" height="27" rx="12" fill="#fed7aa"/>
+                    <!-- Ikat Kepala Ksatria -->
+                    <rect x="23" y="25" width="34" height="5" rx="2" fill="#dc2626"/>
+                    <rect x="37" y="24" width="6" height="7" rx="1" fill="#fbbf24"/>
+                    <!-- Mata Berbinar -->
+                    <circle cx="33" cy="38" r="3" fill="#1e293b"/>
+                    <circle cx="34" cy="37" r="1" fill="#ffffff"/>
+                    <circle cx="47" cy="38" r="3" fill="#1e293b"/>
+                    <circle cx="48" cy="37" r="1" fill="#ffffff"/>
+                    <!-- Senyum Percaya Diri -->
+                    <path d="M36 44 Q40 48 44 44" stroke="#9a3412" stroke-width="2" fill="none" stroke-linecap="round"/>
+                    <!-- Perisai Mini -->
+                    <path d="M13 48 L27 48 L27 60 Q20 68 13 60 Z" fill="#38bdf8" stroke="#f8fafc" stroke-width="2"/>
+                </svg>`;
+            } else if (heroId === 'mage') {
+                // Sinta - Penyihir Sirkuit (Topi runcing penyihir biru & tongkat kristal)
+                return `<svg viewBox="0 0 80 80" class="w-full h-full">
+                    <rect x="6" y="6" width="68" height="68" rx="16" fill="#0c4a6e"/>
+                    <!-- Jubah Penyihir -->
+                    <path d="M20 68 C20 49 60 49 60 68 Z" fill="#1d4ed8"/>
+                    <path d="M32 51 L40 62 L48 51 Z" fill="#38bdf8"/>
+                    <!-- Rambut Panjang Ungu-Biru -->
+                    <path d="M20 32 Q16 52 22 62 L58 62 Q64 52 60 32 Z" fill="#312e81"/>
+                    <!-- Wajah Kartun Chibi -->
+                    <rect x="25" y="27" width="30" height="25" rx="12" fill="#ffedd5"/>
+                    <!-- Topi Penyihir Runcing -->
+                    <ellipse cx="40" cy="28" rx="24" ry="5" fill="#2563eb"/>
+                    <path d="M24 28 L41 7 L55 28 Z" fill="#3b82f6"/>
+                    <rect x="28" y="24" width="24" height="3.5" fill="#fbbf24"/>
+                    <!-- Mata Kartun -->
+                    <circle cx="34" cy="39" r="3" fill="#1e293b"/>
+                    <circle cx="35" cy="38" r="1" fill="#ffffff"/>
+                    <circle cx="46" cy="39" r="3" fill="#1e293b"/>
+                    <circle cx="47" cy="38" r="1" fill="#ffffff"/>
+                    <path d="M37 45 Q40 48 43 45" stroke="#be185d" stroke-width="2" fill="none" stroke-linecap="round"/>
+                    <!-- Tongkat Sihir Kristal -->
+                    <line x1="63" y1="30" x2="63" y2="68" stroke="#92400e" stroke-width="3.5" stroke-linecap="round"/>
+                    <polygon points="63,20 69,28 63,36 57,28" fill="#38bdf8" stroke="#e0f2fe" stroke-width="1.5"/>
+                </svg>`;
+            } else if (heroId === 'healer') {
+                // Ayu - Dokter / Tabib Sistem (Jas putih dokter, topi palang medis, stetoskop)
+                return `<svg viewBox="0 0 80 80" class="w-full h-full">
+                    <rect x="6" y="6" width="68" height="68" rx="16" fill="#064e3b"/>
+                    <!-- Jas Putih Dokter -->
+                    <path d="M20 68 C20 49 60 49 60 68 Z" fill="#f8fafc"/>
+                    <path d="M34 50 L40 64 L46 50 Z" fill="#10b981"/>
+                    <!-- Stetoskop -->
+                    <path d="M31 51 Q31 61 40 61 Q49 61 49 51" stroke="#475569" stroke-width="2.5" fill="none"/>
+                    <circle cx="47" cy="61" r="3" fill="#94a3b8"/>
+                    <!-- Rambut Coklat Hangat -->
+                    <path d="M21 31 Q18 48 24 54 L56 54 Q62 48 59 31 Z" fill="#7c2d12"/>
+                    <!-- Wajah Kartun Chibi -->
+                    <rect x="25" y="26" width="30" height="26" rx="12" fill="#fed7aa"/>
+                    <!-- Topi Perawat / Dokter dengan Palang Hijau -->
+                    <path d="M26 26 L30 15 L50 15 L54 26 Z" fill="#ffffff" stroke="#cbd5e1" stroke-width="1"/>
+                    <rect x="38.5" y="17" width="3" height="7" fill="#10b981"/>
+                    <rect x="36.5" y="19" width="7" height="3" fill="#10b981"/>
+                    <!-- Mata Ramah -->
+                    <circle cx="34" cy="38" r="3" fill="#1e293b"/>
+                    <circle cx="35" cy="37" r="1" fill="#ffffff"/>
+                    <circle cx="46" cy="38" r="3" fill="#1e293b"/>
+                    <circle cx="47" cy="37" r="1" fill="#ffffff"/>
+                    <circle cx="29" cy="42" r="2.2" fill="#fda4af" opacity="0.7"/>
+                    <circle cx="51" cy="42" r="2.2" fill="#fda4af" opacity="0.7"/>
+                    <path d="M36 44 Q40 48 44 44" stroke="#9a3412" stroke-width="2" fill="none" stroke-linecap="round"/>
+                </svg>`;
+            } else {
+                // Bima - Pemanah Port (Tudung hijau pemanah hutan, busur & anak panah)
+                return `<svg viewBox="0 0 80 80" class="w-full h-full">
+                    <rect x="6" y="6" width="68" height="68" rx="16" fill="#14532d"/>
+                    <!-- Jubah Hijau Pemanah -->
+                    <path d="M21 68 C21 49 59 49 59 68 Z" fill="#15803d"/>
+                    <line x1="30" y1="51" x2="50" y2="67" stroke="#78350f" stroke-width="4"/>
+                    <!-- Tudung / Topi Pemanah Hijau -->
+                    <path d="M21 34 Q22 14 40 13 Q58 14 59 34 Z" fill="#166534"/>
+                    <path d="M48 16 L60 11 L54 21 Z" fill="#ef4444"/>
+                    <!-- Wajah Kartun Chibi -->
+                    <rect x="25" y="26" width="30" height="26" rx="12" fill="#fed7aa"/>
+                    <!-- Mata Tajam -->
+                    <circle cx="34" cy="38" r="3" fill="#1e293b"/>
+                    <circle cx="35" cy="37" r="1" fill="#ffffff"/>
+                    <circle cx="46" cy="38" r="3" fill="#1e293b"/>
+                    <circle cx="47" cy="37" r="1" fill="#ffffff"/>
+                    <path d="M36 44 Q40 47 44 44" stroke="#9a3412" stroke-width="2" fill="none" stroke-linecap="round"/>
+                    <!-- Busur Panah di Samping -->
+                    <path d="M60 22 Q72 44 60 66" stroke="#d97706" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+                    <line x1="60" y1="22" x2="60" y2="66" stroke="#f8fafc" stroke-width="1.2"/>
+                    <line x1="48" y1="44" x2="71" y2="44" stroke="#fbbf24" stroke-width="2"/>
+                </svg>`;
+            }
+        }
+
+        function drawHeroCanvasCharacter(ctx, heroId, x, y, w, h, facing) {
+            ctx.save();
+            ctx.translate(x + w / 2, y + h / 2);
+            if (facing === -1) ctx.scale(-1, 1);
+            ctx.translate(-w / 2, -h / 2);
+
+            if (heroId === 'warrior') {
+                // Ksatria Raka
+                // Pedang di belakang
+                ctx.fillStyle = "#e2e8f0";
+                ctx.fillRect(w - 6, 4, 5, 24);
+                ctx.fillStyle = "#f59e0b";
+                ctx.fillRect(w - 9, 20, 11, 3);
+                // Badan Zirah
+                ctx.fillStyle = "#d97706";
+                ctx.beginPath();
+                ctx.roundRect(5, 22, w - 10, h - 22, 8);
+                ctx.fill();
+                // Kepala & Rambut Ksatria
+                ctx.fillStyle = "#fed7aa";
+                ctx.beginPath();
+                ctx.roundRect(6, 4, w - 12, 21, 9);
+                ctx.fill();
+                ctx.fillStyle = "#78350f";
+                ctx.beginPath();
+                ctx.moveTo(5, 11); ctx.lineTo(10, 0); ctx.lineTo(19, 6); ctx.lineTo(28, 0); ctx.lineTo(w - 5, 11);
+                ctx.fill();
+                // Ikat Kepala Merah
+                ctx.fillStyle = "#dc2626";
+                ctx.fillRect(6, 9, w - 12, 4);
+                // Mata
+                ctx.fillStyle = "#0f172a";
+                ctx.fillRect(14, 15, 3, 4);
+                ctx.fillRect(23, 15, 3, 4);
+                // Perisai Biru
+                ctx.fillStyle = "#38bdf8";
+                ctx.beginPath();
+                ctx.roundRect(-2, 24, 11, 15, 4);
+                ctx.fill();
+            } else if (heroId === 'mage') {
+                // Penyihir Sinta
+                // Jubah Biru
+                ctx.fillStyle = "#2563eb";
+                ctx.beginPath();
+                ctx.roundRect(5, 22, w - 10, h - 22, 8);
+                ctx.fill();
+                // Rambut & Wajah
+                ctx.fillStyle = "#312e81";
+                ctx.fillRect(5, 10, w - 10, 20);
+                ctx.fillStyle = "#ffedd5";
+                ctx.beginPath();
+                ctx.roundRect(7, 7, w - 14, 19, 8);
+                ctx.fill();
+                // Topi Penyihir Runcing
+                ctx.fillStyle = "#3b82f6";
+                ctx.beginPath();
+                ctx.moveTo(2, 10); ctx.lineTo(w / 2, -8); ctx.lineTo(w - 2, 10);
+                ctx.closePath();
+                ctx.fill();
+                ctx.fillStyle = "#fbbf24";
+                ctx.fillRect(7, 7, w - 14, 3);
+                // Mata
+                ctx.fillStyle = "#0f172a";
+                ctx.fillRect(14, 16, 3, 4);
+                ctx.fillRect(23, 16, 3, 4);
+                // Tongkat Kristal
+                ctx.fillStyle = "#92400e";
+                ctx.fillRect(w - 4, 12, 3, 32);
+                ctx.fillStyle = "#38bdf8";
+                ctx.beginPath();
+                ctx.arc(w - 2.5, 10, 5, 0, Math.PI * 2);
+                ctx.fill();
+            } else if (heroId === 'healer') {
+                // Dokter Ayu
+                // Jas Putih Dokter
+                ctx.fillStyle = "#f8fafc";
+                ctx.beginPath();
+                ctx.roundRect(5, 22, w - 10, h - 22, 8);
+                ctx.fill();
+                ctx.fillStyle = "#10b981";
+                ctx.fillRect(w / 2 - 3, 24, 6, 16);
+                // Rambut & Wajah
+                ctx.fillStyle = "#7c2d12";
+                ctx.fillRect(5, 9, w - 10, 18);
+                ctx.fillStyle = "#fed7aa";
+                ctx.beginPath();
+                ctx.roundRect(7, 6, w - 14, 19, 8);
+                ctx.fill();
+                // Topi Medis + Palang Hijau
+                ctx.fillStyle = "#ffffff";
+                ctx.fillRect(9, 0, w - 18, 7);
+                ctx.fillStyle = "#10b981";
+                ctx.fillRect(w / 2 - 1.5, 1, 3, 5);
+                ctx.fillRect(w / 2 - 3, 2.5, 6, 2);
+                // Mata
+                ctx.fillStyle = "#0f172a";
+                ctx.fillRect(14, 15, 3, 4);
+                ctx.fillRect(23, 15, 3, 4);
+            } else {
+                // Pemanah Bima
+                // Jubah Hijau
+                ctx.fillStyle = "#15803d";
+                ctx.beginPath();
+                ctx.roundRect(5, 22, w - 10, h - 22, 8);
+                ctx.fill();
+                // Wajah & Tudung Pemanah
+                ctx.fillStyle = "#fed7aa";
+                ctx.beginPath();
+                ctx.roundRect(7, 6, w - 14, 19, 8);
+                ctx.fill();
+                ctx.fillStyle = "#166534";
+                ctx.beginPath();
+                ctx.moveTo(5, 11); ctx.quadraticCurveTo(w / 2, -4, w - 5, 11);
+                ctx.fill();
+                // Bulu Topi Merah
+                ctx.fillStyle = "#ef4444";
+                ctx.fillRect(8, 2, 7, 4);
+                // Mata
+                ctx.fillStyle = "#0f172a";
+                ctx.fillRect(14, 15, 3, 4);
+                ctx.fillRect(23, 15, 3, 4);
+                // Busur Panah
+                ctx.strokeStyle = "#d97706";
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(w - 5, 28, 12, -Math.PI / 2, Math.PI / 2);
+                ctx.stroke();
+            }
+
+            ctx.restore();
+        }
+
+        const HEROES = [
+            {
+                id: 'warrior',
+                name: 'Raka',
+                role: 'Ksatria Hardware',
+                icon: '🛡️',
+                color: '#f59e0b',
+                borderClass: 'border-amber-500',
+                bgClass: 'bg-amber-500/10',
+                skillName: 'Perisai Grounding',
+                skillDesc: 'HP Maksimal +30 (130 HP). Tahan terhadap sengatan listrik statis ESD.',
+                maxHp: 130,
+                bonusScore: 1,
+                extraTime: 0,
+                healOnCorrect: 0
+            },
+            {
+                id: 'mage',
+                name: 'Sinta',
+                role: 'Penyihir Sirkuit',
+                icon: '🔮',
+                color: '#38bdf8',
+                borderClass: 'border-sky-500',
+                bgClass: 'bg-sky-500/10',
+                skillName: 'Analisis Logika',
+                skillDesc: 'Skor jawaban benar 1.5x lipat! Ahli membaca spesifikasi komponen.',
+                maxHp: 100,
+                bonusScore: 1.5,
+                extraTime: 0,
+                healOnCorrect: 0
+            },
+            {
+                id: 'healer',
+                name: 'Ayu',
+                role: 'Dokter Sistem',
+                icon: '🩺',
+                color: '#10b981',
+                borderClass: 'border-emerald-500',
+                bgClass: 'bg-emerald-500/10',
+                skillName: 'Pemulihan Daya',
+                skillDesc: 'Memulihkan +15 HP setiap kali menjawab soal dengan benar.',
+                maxHp: 100,
+                bonusScore: 1,
+                extraTime: 0,
+                healOnCorrect: 15
+            },
+            {
+                id: 'archer',
+                name: 'Bima',
+                role: 'Pemanah Port',
+                icon: '🏹',
+                color: '#f43f5e',
+                borderClass: 'border-rose-500',
+                bgClass: 'bg-rose-500/10',
+                skillName: 'Fokus Presisi',
+                skillDesc: '+15 detik waktu menjawab soal & ekstra 1 petunjuk kuis.',
+                maxHp: 100,
+                bonusScore: 1,
+                extraTime: 15,
+                healOnCorrect: 0
+            }
+        ];
+
+        let selectedHeroId = 'warrior';
+
+        /* =========================================================================
+           3. DEFAULT QUESTIONS DATABASE (SESUAI 5 TUJUAN PEMBELAJARAN HARD-EXPLORER)
+           ========================================================================= */
+        const DEFAULT_SUBJECT = "Dasar-Dasar TJKT (Perangkat Keras Komputer)";
+        const DEFAULT_QUESTIONS = [
+            // Lantai 1: TP 1 - Komponen Utama Perangkat Keras
+            {
+                floor: 1,
+                tp: "TP 1: Mengidentifikasi Komponen Utama",
+                question: "Komponen utama berbentuk papan sirkuit cetak (PCB) besar yang menjadi tempat terpasangnya CPU, RAM, slot ekspansi, dan menghubungkan seluruh perangkat keras komputer adalah...",
+                options: ["Motherboard", "Power Supply Unit (PSU)", "Hard Disk Drive (HDD)", "Heatsink Fan"],
+                correctIndex: 0,
+                explanation: "Motherboard adalah papan sirkuit utama yang menghubungkan CPU, RAM, penyimpanan, dan periferal agar dapat berkomunikasi."
+            },
+            {
+                floor: 1,
+                tp: "TP 1: Mengidentifikasi Komponen Utama",
+                question: "Manakah di bawah ini yang termasuk kelompok perangkat keras periferal (eksternal) dan BUKAN komponen inti di dalam casing?",
+                options: ["Processor (CPU)", "Modul RAM DDR4", "Keyboard & Mouse", "Motherboard ATX"],
+                correctIndex: 2,
+                explanation: "Keyboard dan Mouse adalah perangkat periferal input eksternal, sedangkan CPU, RAM, dan Motherboard adalah komponen internal utama."
+            },
+            // Lantai 2: TP 2 - Siklus Input, Proses, Output, Penyimpanan
+            {
+                floor: 2,
+                tp: "TP 2: Siklus Input-Proses-Output-Storage",
+                question: "Dalam siklus pengolahan data komputer (IPOS), urutan fungsi yang benar ketika pengguna mengetik dokumen hingga menyimpannya secara permanen adalah...",
+                options: [
+                    "Monitor (Input) → RAM (Output) → CPU (Storage)",
+                    "Keyboard (Input) → CPU & RAM (Proses) → Monitor (Output) → SSD (Storage)",
+                    "SSD (Input) → PSU (Proses) → Mouse (Output)",
+                    "CPU (Input) → Keyboard (Proses) → Printer (Storage)"
+                ],
+                correctIndex: 1,
+                explanation: "Data dimasukkan lewat Keyboard (Input), diolah oleh CPU dibantu memori sementara RAM (Proses), ditampilkan ke Monitor (Output), dan disimpan di SSD (Storage)."
+            },
+            {
+                floor: 2,
+                tp: "TP 2: Fungsi & Hubungan Antarkomponen",
+                question: "Mengapa data yang sedang dikerjakan di aplikasi akan hilang jika listrik tiba-tiba padam sebelum disimpan ke SSD/HDD?",
+                options: [
+                    "Karena PSU memutus arus ke monitor",
+                    "Karena RAM bersifat volatile (memori sementara yang butuh aliran listrik)",
+                    "Karena CPU menghapus seluruh file sistem",
+                    "Karena kabel HDMI terputus otomatis"
+                ],
+                correctIndex: 1,
+                explanation: "RAM (Random Access Memory) bersifat volatile, artinya hanya menyimpan data sementara selama komputer mendapatkan daya listrik."
+            },
+            // Lantai 3: TP 3 - Port, Slot, dan Konektor
+            {
+                floor: 3,
+                tp: "TP 3: Mengenali Port, Slot, dan Konektor",
+                question: "Seorang teknisi TJKT ingin memasang kartu grafis (VGA Card) eksternal berkecepatan tinggi pada motherboard modern. Slot manakah yang paling tepat digunakan?",
+                options: ["Slot PCI Express (PCIe) x16", "Port RJ-45", "Port PS/2", "Konektor Molex 4-pin"],
+                correctIndex: 0,
+                explanation: "Slot PCIe x16 memiliki jalur bandwidth terlebar pada motherboard yang dirancang khusus untuk kartu grafis (GPU/VGA)."
+            },
+            {
+                floor: 3,
+                tp: "TP 3: Mengenali Port, Slot, dan Konektor",
+                question: "Port pada panel belakang motherboard yang digunakan untuk menghubungkan kabel jaringan lokal (LAN) dengan konektor standar 8-pin adalah...",
+                options: ["Port HDMI", "Port RJ-45 (Ethernet)", "Port USB Type-C", "Port Audio Jack 3.5mm"],
+                correctIndex: 1,
+                explanation: "Port RJ-45 digunakan untuk koneksi jaringan kabel Ethernet (LAN) menggunakan kabel UTP/STP."
+            },
+            // Lantai 4: TP 4 - Analisis Spesifikasi & Kompatibilitas (Studi Kasus)
+            {
+                floor: 4,
+                tp: "TP 4: Analisis Spesifikasi & Kompatibilitas",
+                question: "STUDI KASUS: Lab komputer sekolah mengalami keluhan PC sangat lambat saat membuka banyak tab browser dan aplikasi desain. Spesifikasi saat ini: Core i3, RAM 4GB DDR4, HDD 500GB. Upgrade paling efektif dengan anggaran hemat adalah...",
+                options: [
+                    "Mengganti casing dengan lampu RGB",
+                    "Menambah kapasitas RAM menjadi 8GB/16GB dan mengganti sistem ke SSD",
+                    "Mengganti mouse dan keyboard gaming",
+                    "Mengganti monitor ke ukuran lebih besar"
+                ],
+                correctIndex: 1,
+                explanation: "Upgrade dari HDD ke SSD mempercepat baca/tulis sistem operasi secara drastis, dan penambahan RAM mengatasi bottleneck multitasking."
+            },
+            {
+                floor: 4,
+                tp: "TP 4: Analisis Spesifikasi & Kompatibilitas",
+                question: "Sebelum membeli prosesor baru untuk mengganti prosesor lama pada motherboard yang sudah ada, hal utama yang wajib diperiksa agar kompatibel secara fisik adalah...",
+                options: [
+                    "Warna heatsink dan merek casing",
+                    "Tipe Socket CPU dan dukungan Chipset motherboard",
+                    "Ukuran kapasitas hard disk",
+                    "Panjang kabel power supply"
+                ],
+                correctIndex: 1,
+                explanation: "Socket CPU (misalnya LGA 1700 atau AM4) dan chipset motherboard harus cocok agar prosesor dapat terpasang dan dikenali."
+            },
+            // Lantai 5: TP 5 - K3LH & Pencegahan ESD
+            {
+                floor: 5,
+                tp: "TP 5: Prinsip K3LH & Pencegahan ESD",
+                question: "Saat hendak memegang keping RAM atau motherboard, teknisi wajib mencegah kerusakan akibat Electrostatic Discharge (ESD). Tindakan pencegahan yang benar adalah...",
+                options: [
+                    "Bekerja di atas karpet berbulu sambil memakai kaus kaki wol",
+                    "Memakai gelang antistatis (ESD wrist strap) atau menyentuh bagian logam casing terlebih dahulu",
+                    "Memegang langsung pin kuningan (gold fingers) pada keping RAM",
+                    "Membongkar komponen saat kabel power PSU masih tercolok ke stopkontak"
+                ],
+                correctIndex: 1,
+                explanation: "Gelang antistatis atau menyentuh logam casing menetralkan muatan listrik statis dari tubuh sehingga tidak merusak sirkuit mikro komponen."
+            },
+            {
+                floor: 5,
+                tp: "TP 5: Prinsip K3LH & Pencegahan ESD",
+                question: "Urutan langkah kerja aman (K3LH) yang paling tepat sebelum membuka penutup samping casing komputer untuk perawatan adalah...",
+                options: [
+                    "Langsung buka baut casing saat komputer menyala agar terlihat kipasnya",
+                    "Matikan komputer (Shutdown) → Cabut kabel power dari stopkontak → Tekan tombol power sebentar untuk buang sisa arus → Gunakan gelang antistatis",
+                    "Cabut kabel monitor saja lalu pegang motherboard dengan tangan basah",
+                    "Semprotkan cairan pembersih langsung ke dalam Power Supply"
+                ],
+                correctIndex: 1,
+                explanation: "Memutus sumber listrik utama, mengosongkan kapasitor, dan menetralkan listrik statis (ESD) adalah standar keselamatan kerja wajib di bengkel TJKT."
+            }
+        ];
+
+        let activeSubject = DEFAULT_SUBJECT;
+        let questionsList = JSON.parse(JSON.stringify(DEFAULT_QUESTIONS));
+
+        // Load saved custom questions from localStorage if available
+        function loadSavedQuestions() {
+            try {
+                const savedSub = localStorage.getItem('hard_explorer_subject');
+                const savedQ = localStorage.getItem('hard_explorer_questions');
+                if (savedSub) activeSubject = savedSub;
+                if (savedQ) {
+                    const parsed = JSON.parse(savedQ);
+                    if (Array.isArray(parsed) && parsed.length > 0) {
+                        questionsList = parsed;
+                    }
+                }
+            } catch (e) { /* Fallback to default */ }
+            document.getElementById('menu-active-subject').textContent = activeSubject;
+        }
+
+        /* =========================================================================
+           4. MODUL FLIPBOOK CONTENT (LENGKAP + PETA MOTHERBOARD + TAUTAN YOUTUBE)
+           ========================================================================= */
+        const FB_IPOS_TABS = [
+            { i: "⌨️", n: "Input", d: "Memasukkan data ke komputer.", e: "Keyboard, mouse, webcam, scanner" },
+            { i: "⚙️", n: "Proses", d: "Mengolah data menjadi informasi.", e: "CPU dan RAM" },
+            { i: "🖥️", n: "Output", d: "Menampilkan hasil pengolahan.", e: "Monitor, printer, speaker" },
+            { i: "💾", n: "Simpan", d: "Menyimpan data agar tidak hilang.", e: "SSD, HDD, flashdisk" }
+        ];
+
+        const FB_MOBO_PARTS = [
+            { k: "cpu", n: "CPU (Prosesor)", s: "CPU", x: 250, y: 110, w: 100, h: 96, f: "Menjalankan instruksi dan mengolah data. Disebut otak komputer.", c: "Chip persegi kecil di bawah kipas atau heatsink, terpasang di socket.", t: "Jangan menyentuh pin atau pad emasnya. Oleskan pasta termal sebelum memasang pendingin." },
+            { k: "ram", n: "RAM", s: "RAM", x: 392, y: 50, w: 46, h: 170, f: "Memori sementara untuk data dan program yang sedang berjalan. Datanya hilang saat komputer mati.", c: "Modul memanjang, dipasang pada slot sejajar di dekat CPU.", t: "Cocokkan takik pada modul dengan slot, lalu tekan sampai klip terkunci." },
+            { k: "gpu", n: "Slot VGA (PCIe)", s: "Slot VGA", x: 40, y: 290, w: 290, h: 32, f: "Tempat memasang kartu grafis untuk mengolah gambar, video, dan game.", c: "Slot panjang di bagian bawah papan.", t: "Banyak komputer kantor tidak butuh kartu ini karena grafis sudah ada di CPU." },
+            { k: "ssd", n: "Slot M.2 (SSD)", s: "M.2", x: 240, y: 228, w: 116, h: 30, f: "Menyimpan sistem operasi dan data. SSD M.2 berbentuk pipih seperti permen karet.", c: "Slot kecil dekat CPU, memakai satu sekrup kecil.", t: "Pastikan jenis M.2 yang dipasang sesuai dengan yang didukung motherboard." },
+            { k: "sata", n: "Port SATA", s: "SATA", x: 455, y: 340, w: 130, h: 30, f: "Menghubungkan HDD atau SSD berkabel ke motherboard.", c: "Deretan konektor kecil berbentuk L di tepi bawah.", t: "Cabut kabel dengan menarik kepala konektornya, bukan kabelnya." },
+            { k: "psu", n: "Konektor 24-pin", s: "24-pin", x: 574, y: 100, w: 34, h: 120, f: "Menerima daya utama dari PSU untuk seluruh papan induk.", c: "Konektor panjang berpenjepit di tepi kanan papan.", t: "Pasang hanya saat PSU tidak terhubung ke listrik." },
+            { k: "chip", n: "Chipset", s: "Chipset", x: 455, y: 262, w: 64, h: 56, f: "Mengatur lalu lintas data antara CPU, penyimpanan, dan port.", c: "Chip persegi, sering tertutup heatsink kecil.", t: "Tidak diganti terpisah. Chipset menentukan fitur motherboard." },
+            { k: "cmos", n: "Baterai CMOS", s: "CMOS", x: 100, y: 222, w: 56, h: 56, r: 28, f: "Menjaga jam dan pengaturan BIOS tetap tersimpan saat komputer mati.", c: "Baterai bulat pipih (tipe CR2032) pada motherboard.", t: "Jika jam komputer sering salah, baterai ini kandidat pertama untuk diganti." },
+            { k: "io", n: "Panel I/O", s: "I/O", x: 14, y: 50, w: 84, h: 150, f: "Tempat port USB, audio, jaringan (LAN), dan video di bagian belakang.", c: "Kumpulan port di sisi kiri papan yang menghadap ke luar casing.", t: "Port LAN di sini yang nantinya kamu pakai untuk menyambung ke jaringan." }
+        ];
+
+        let fbSeenMobo = {};
+        let fbSelectedMobo = null;
+        let fbActiveTab = 0;
+
+        const FLIPBOOK_PAGES = [
+            {
+                title: "🎯 Tujuan Belajar & Masalah Pemantik",
+                badge: "Halaman 1 • Pengantar Modul",
+                content: `
+                    <div class="space-y-3 text-xs sm:text-sm text-slate-200">
+                        <div class="bg-amber-950/50 border-2 border-dashed border-amber-500/70 rounded-xl p-3.5">
+                            <strong class="text-amber-300">💡 Masalah Pemantik:</strong> Komputer di lab sekolah terasa lambat. Menurutmu, komponen mana yang perlu diganti? Simpan jawabanmu, kita cek lagi di akhir!
+                        </div>
+                        <p class="font-semibold text-slate-300">Setelah belajar modul ini, kamu mampu:</p>
+                        <div class="space-y-2">
+                            <div class="bg-emerald-950/50 border border-emerald-700/50 p-2.5 rounded-xl flex gap-2.5 items-center"><span class="text-lg">🔍</span><div><strong class="text-emerald-300">1. Mengidentifikasi</strong> minimal 8 komponen utama dan periferal dari bentuk dan letaknya.</div></div>
+                            <div class="bg-amber-950/40 border border-amber-700/50 p-2.5 rounded-xl flex gap-2.5 items-center"><span class="text-lg">⚙️</span><div><strong class="text-amber-300">2. Menjelaskan</strong> fungsi komponen dan alur input, proses, output, penyimpanan.</div></div>
+                            <div class="bg-sky-950/50 border border-sky-700/50 p-2.5 rounded-xl flex gap-2.5 items-center"><span class="text-lg">🔌</span><div><strong class="text-sky-300">3. Mengenali</strong> port, slot, konektor beserta kegunaan dan pasangannya.</div></div>
+                            <div class="bg-purple-950/50 border border-purple-700/50 p-2.5 rounded-xl flex gap-2.5 items-center"><span class="text-lg">📋</span><div><strong class="text-purple-300">4. Membandingkan</strong> spesifikasi dan merancang rekomendasi rakitan sesuai kebutuhan dan anggaran.</div></div>
+                            <div class="bg-rose-950/50 border border-rose-700/50 p-2.5 rounded-xl flex gap-2.5 items-center"><span class="text-lg">🛡️</span><div><strong class="text-rose-300">5. Menerapkan</strong> K3LH dan pencegahan ESD dengan disiplin dan teliti.</div></div>
+                        </div>
+                    </div>
+                `
+            },
+            {
+                title: "📚 Daftar Isi Modul Perangkat Keras",
+                badge: "Halaman 2 • Navigasi Cepat",
+                content: `
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs sm:text-sm">
+                        ${[
+                            ["🖥️", "Bab 1: Sistem Komputer", 2],
+                            ["🔲", "Bab 2: Papan Induk (Interaktif)", 3],
+                            ["🔌", "Bab 3: Perangkat Luar & Port", 4],
+                            ["📋", "Bab 4: Membaca Spesifikasi", 5],
+                            ["🛡️", "Bab 5: Keselamatan & ESD", 6],
+                            ["▶️", "Referensi Video YouTube", 7],
+                            ["✨", "Kesimpulan & Poin Utama", 8],
+                            ["📖", "Glosarium Istilah TJKT", 9],
+                            ["🚀", "Aktivitas Lanjutan & Wordwall", 10]
+                        ].map(item => `
+                            <button onclick="goFlipbookPage(${item[2]})" class="flex items-center justify-between bg-slate-800 hover:bg-slate-700 border border-slate-700 p-3 rounded-xl text-left transition">
+                                <span class="flex items-center gap-2 font-semibold text-white"><span class="text-lg">${item[0]}</span> ${item[1]}</span>
+                                <span class="text-xs bg-sky-500/20 text-sky-300 px-2 py-0.5 rounded-lg font-bold">Hal ${item[2] + 1}</span>
+                            </button>
+                        `).join('')}
+                    </div>
+                `
+            },
+            {
+                title: "Bab 1: Sistem Komputer & Alur IPOS",
+                badge: "Halaman 3 • Materi Bab 1",
+                content: `
+                    <div class="space-y-3 text-xs sm:text-sm text-slate-200">
+                        <p>Komputer terdiri dari perangkat keras (<em>hardware</em>) yang bisa disentuh dan perangkat lunak (<em>software</em>) yang menjalankannya. Ketuk tiap tahap alur kerja berikut:</p>
+                        <div class="grid grid-cols-4 gap-1.5" id="fb-ipos-tabs">
+                            ${FB_IPOS_TABS.map((t, idx) => `
+                                <button onclick="selectFbIposTab(${idx})" class="fb-tab-btn p-2 rounded-xl border text-center font-bold transition ${idx === 0 ? 'bg-sky-600 border-sky-400 text-white' : 'bg-slate-800 border-slate-700 text-slate-300'}">
+                                    <span class="block text-lg">${t.i}</span>${t.n}
+                                </button>
+                            `).join('')}
+                        </div>
+                        <div id="fb-ipos-detail" class="bg-amber-950/40 border border-amber-600/40 rounded-xl p-3">
+                            <strong class="text-amber-300 block mb-1">${FB_IPOS_TABS[0].i} ${FB_IPOS_TABS[0].n}</strong>
+                            <p class="m-0">${FB_IPOS_TABS[0].d}</p>
+                            <p class="mt-1 text-slate-300"><strong>Contoh perangkat:</strong> ${FB_IPOS_TABS[0].e}</p>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            <div class="bg-slate-800 p-3 rounded-xl border border-slate-700">
+                                <strong class="text-emerald-400 block mb-1">Komponen Utama (Dalam Casing)</strong>
+                                Motherboard, CPU, RAM, storage (SSD/HDD), PSU, VGA/kartu grafis, casing.
+                            </div>
+                            <div class="bg-slate-800 p-3 rounded-xl border border-slate-700">
+                                <strong class="text-amber-400 block mb-1">Periferal (Perangkat Tambahan)</strong>
+                                Keyboard, mouse, monitor, printer, speaker, webcam.
+                            </div>
+                        </div>
+                    </div>
+                `
+            },
+            {
+                title: "Bab 2: Peta Interaktif Papan Induk (Motherboard)",
+                badge: "Halaman 4 • Materi Bab 2",
+                onRender: () => renderFbMotherboard(),
+                content: `
+                    <div class="space-y-2.5 text-xs sm:text-sm text-slate-200">
+                        <p class="m-0">Motherboard menghubungkan semua komponen. <strong>Ketuk bagian pada denah</strong> atau pilih tombol komponen:</p>
+                        <div id="fb-mobo-svg-wrap" class="w-full rounded-xl overflow-hidden border border-emerald-700 bg-[#0e3b35]"></div>
+                        <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                            <div id="fb-mobo-prog" class="h-full bg-gradient-to-r from-emerald-500 to-amber-400 transition-all" style="width: 0%"></div>
+                        </div>
+                        <div id="fb-mobo-status" class="text-[11px] text-slate-400">0 dari 9 komponen sudah dijelajahi.</div>
+                        <div id="fb-mobo-chips" class="flex flex-wrap gap-1.5"></div>
+                        <div id="fb-mobo-detail" class="bg-amber-950/40 border border-amber-600/40 rounded-xl p-3 text-xs">
+                            Pilih satu komponen pada gambar untuk melihat fungsi, ciri visual, dan catatan pentingnya.
+                        </div>
+                    </div>
+                `
+            },
+            {
+                title: "Bab 3: Perangkat Luar & Port Konektor",
+                badge: "Halaman 5 • Materi Bab 3",
+                content: `
+                    <div class="space-y-3 text-xs sm:text-sm text-slate-200">
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            <div class="bg-slate-800 p-2.5 rounded-xl border border-slate-700"><strong class="text-emerald-400">⌨️ Input:</strong> Keyboard, mouse, scanner.</div>
+                            <div class="bg-slate-800 p-2.5 rounded-xl border border-slate-700"><strong class="text-amber-400">🖥️ Output:</strong> Monitor, printer, speaker.</div>
+                            <div class="bg-slate-800 p-2.5 rounded-xl border border-slate-700"><strong class="text-sky-400">💾 Luar:</strong> Flashdisk, HDD eksternal.</div>
+                        </div>
+                        <h4 class="font-bold text-sky-400 m-0">Port di Belakang Komputer:</h4>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div class="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700"><strong>🔌 USB:</strong> Keyboard, mouse, flashdisk, printer</div>
+                            <div class="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700"><strong>📺 HDMI / VGA / DP:</strong> Menyambung monitor/proyektor</div>
+                            <div class="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700"><strong>🌐 LAN (RJ-45):</strong> Kabel jaringan (penting bagi TJKT)</div>
+                            <div class="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700"><strong>🎧 Audio:</strong> Speaker, headset, mikrofon</div>
+                        </div>
+                        <div class="bg-slate-800/90 p-3 rounded-xl border border-slate-700 space-y-1.5 text-xs">
+                            <strong class="text-amber-400 block">Pasangan Konektor Utama:</strong>
+                            <div>• Kabel LAN RJ-45 ↔ <strong>Port LAN</strong> &nbsp;|&nbsp; • Kabel SATA ↔ <strong>Port SATA</strong></div>
+                            <div>• Kartu VGA ↔ <strong>Slot PCIe</strong> &nbsp;|&nbsp; • Kabel HDMI ↔ <strong>Port HDMI</strong></div>
+                        </div>
+                    </div>
+                `
+            },
+            {
+                title: "Bab 4: Membaca Spesifikasi & Kompatibilitas",
+                badge: "Halaman 6 • Materi Bab 4",
+                content: `
+                    <div class="space-y-2.5 text-xs sm:text-sm text-slate-200">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <div class="bg-slate-800 p-2.5 rounded-xl border border-slate-700"><strong class="text-amber-400">⚡ 3,6 GHz:</strong> Kecepatan clock CPU per inti.</div>
+                            <div class="bg-slate-800 p-2.5 rounded-xl border border-slate-700"><strong class="text-sky-400">🧠 8 GB DDR4:</strong> Kapasitas & generasi RAM (DDR4 ≠ DDR5).</div>
+                            <div class="bg-slate-800 p-2.5 rounded-xl border border-slate-700"><strong class="text-emerald-400">🔲 Socket:</strong> Dudukan CPU, wajib cocok dengan motherboard.</div>
+                            <div class="bg-slate-800 p-2.5 rounded-xl border border-slate-700"><strong class="text-purple-400">🚀 SSD 256 GB & 🔋 PSU 500 W:</strong> SSD jauh lebih cepat dari HDD; daya PSU harus mencukupi.</div>
+                        </div>
+                        <div class="bg-slate-800/90 p-3 rounded-xl border border-slate-700">
+                            <strong class="text-sky-400 block mb-1">Studi Kasus Rekomendasi Rakitan:</strong>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                                <div class="bg-slate-900 p-2.5 rounded-lg border border-emerald-700/50">
+                                    <strong class="text-emerald-400">Komputer Kantor:</strong> Hemat & stabil. CPU grafis bawaan, RAM 8 GB, SSD 256 GB, tanpa VGA terpisah.
+                                </div>
+                                <div class="bg-slate-900 p-2.5 rounded-lg border border-amber-700/50">
+                                    <strong class="text-amber-400">Desain Grafis:</strong> Kuat olah gambar. CPU cepat, RAM 16 GB+, SSD besar, kartu VGA, PSU berdaya cukup.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `
+            },
+            {
+                title: "Bab 5: Aman Saat Memegang Komponen (K3LH & ESD)",
+                badge: "Halaman 7 • Materi Bab 5",
+                content: `
+                    <div class="space-y-3 text-xs sm:text-sm text-slate-200">
+                        <ol class="list-decimal list-inside space-y-1.5 bg-slate-800/90 p-3.5 rounded-xl border border-rose-500/40">
+                            <li><strong>Matikan komputer</strong> dan cabut kabel listrik sebelum membuka casing.</li>
+                            <li><strong>Sentuh logam casing</strong> untuk melepas listrik statis (ESD) dari tubuhmu.</li>
+                            <li><strong>Pegang komponen di tepinya.</strong> Jangan sentuh pin atau kaki emasnya.</li>
+                            <li><strong>Jangan memaksa memasang.</strong> Periksa arah dan takiknya dahulu.</li>
+                            <li>Simpan di permukaan bersih, bukan di atas kain sintetis.</li>
+                        </ol>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div class="bg-emerald-950/60 border border-emerald-600/50 p-2.5 rounded-xl">
+                                <strong class="text-emerald-400 block">✅ Lakukan:</strong> Memakai gelang antistatis (ESD wrist strap) bila ada.
+                            </div>
+                            <div class="bg-rose-950/60 border border-rose-600/50 p-2.5 rounded-xl">
+                                <strong class="text-rose-400 block">🚫 Hindari:</strong> Membuka casing saat kabel listrik masih terpasang.
+                            </div>
+                        </div>
+                        <p class="text-xs text-amber-300 m-0"><strong>Mengapa penting?</strong> Listrik statis yang tidak terasa olehmu bisa merusak chip mikro dan kerusakannya sering baru terlihat kemudian.</p>
+                    </div>
+                `
+            },
+            {
+                title: "▶️ Referensi Video YouTube Pembelajaran",
+                badge: "Halaman 8 • Tautan Video Materi",
+                content: `
+                    <div class="space-y-2.5 text-xs sm:text-sm text-slate-200">
+                        <p class="m-0 text-slate-300">Video berbahasa Indonesia untuk memperdalam materi. Ketuk kartu untuk menonton di tab baru:</p>
+                        <div class="space-y-2">
+                            ${[
+                                { url: "https://www.youtube.com/watch?v=H_GNYB0jf9Y", title: "Pengenalan perangkat keras komputer", sub: "Bab 1 · Sistem komputer" },
+                                { url: "https://www.youtube.com/watch?v=Iy3kIekAAfU", title: "Perangkat input komputer", sub: "Bab 3 · Perangkat luar" },
+                                { url: "https://www.youtube.com/watch?v=phMe1XluDao", title: "Media penyimpanan: HDD, SSD, flashdisk", sub: "Bab 4 · Spesifikasi penyimpanan" },
+                                { url: "https://www.youtube.com/watch?v=8G7PxeQ4jRs", title: "Perbedaan media penyimpanan (lanjutan)", sub: "Bab 4 · Spesifikasi penyimpanan" },
+                                { url: "https://www.youtube.com/watch?v=-5ralg2ig5Q", title: "Cara menghidupkan dan mematikan komputer", sub: "Bab 1 · Penggunaan dasar" }
+                            ].map(v => `
+                                <a href="${v.url}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-3 bg-slate-800 hover:bg-slate-750 border border-slate-700 hover:border-rose-500/60 p-2.5 rounded-xl transition group">
+                                    <div class="w-14 h-10 rounded-lg bg-gradient-to-br from-rose-600 to-red-800 flex items-center justify-center shrink-0 shadow group-hover:scale-105 transition">
+                                        <span class="text-white text-sm">▶</span>
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <strong class="block text-white truncate group-hover:text-amber-300">${v.title}</strong>
+                                        <small class="text-slate-400 text-xs">${v.sub}</small>
+                                    </div>
+                                    <span class="text-xs text-rose-400 font-bold shrink-0">Tonton ↗</span>
+                                </a>
+                            `).join('')}
+                        </div>
+                        <h4 class="font-bold text-sky-400 pt-1 m-0">🔍 Cari Topik Lain di YouTube:</h4>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <a href="https://www.youtube.com/results?search_query=fungsi+komponen+motherboard+bahasa+indonesia" target="_blank" rel="noopener noreferrer" class="flex items-center gap-2.5 bg-slate-800 hover:bg-slate-700 border border-sky-700/50 p-2.5 rounded-xl transition">
+                                <span class="w-9 h-9 rounded-lg bg-sky-700 flex items-center justify-center text-white shrink-0">🔎</span>
+                                <div><strong class="block text-xs text-white">Fungsi Komponen Motherboard</strong><small class="text-[11px] text-slate-400">Pencarian YouTube · Bab 2</small></div>
+                            </a>
+                            <a href="https://www.youtube.com/results?search_query=keselamatan+kerja+merakit+komputer+ESD" target="_blank" rel="noopener noreferrer" class="flex items-center gap-2.5 bg-slate-800 hover:bg-slate-700 border border-sky-700/50 p-2.5 rounded-xl transition">
+                                <span class="w-9 h-9 rounded-lg bg-sky-700 flex items-center justify-center text-white shrink-0">🔎</span>
+                                <div><strong class="block text-xs text-white">Keselamatan Kerja & ESD</strong><small class="text-[11px] text-slate-400">Pencarian YouTube · Bab 5</small></div>
+                            </a>
+                        </div>
+                        <p class="text-[11px] text-slate-400 m-0">Link video dirujuk dari modul PembaTIK Kemendikbud. Jika ada video yang sudah dihapus pemiliknya, pakai kartu pencarian.</p>
+                    </div>
+                `
+            },
+            {
+                title: "✨ Kesimpulan Modul",
+                badge: "Halaman 9 • Rangkuman Akhir",
+                content: `
+                    <div class="space-y-3 text-xs sm:text-sm text-slate-200">
+                        <p class="m-0">Perangkat keras bekerja sebagai satu sistem: data masuk lewat <strong>input</strong>, diolah <strong>CPU dan RAM</strong>, ditampilkan oleh <strong>output</strong>, dan disimpan di <strong>storage</strong>.</p>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <div class="bg-slate-800 p-2.5 rounded-xl border border-slate-700">🧠 <strong>CPU:</strong> Otak komputer, menjalankan instruksi.</div>
+                            <div class="bg-slate-800 p-2.5 rounded-xl border border-slate-700">⚡ <strong>RAM:</strong> Memori sementara, hilang saat mati.</div>
+                            <div class="bg-slate-800 p-2.5 rounded-xl border border-slate-700">💾 <strong>Storage:</strong> Penyimpan tetap sistem dan data.</div>
+                            <div class="bg-slate-800 p-2.5 rounded-xl border border-slate-700">🔲 <strong>Motherboard & 🔋 PSU:</strong> Penghubung & penyuplai daya.</div>
+                        </div>
+                        <div class="bg-emerald-950/50 border border-emerald-600/50 p-3 rounded-xl space-y-1">
+                            <strong class="text-amber-300 block">✔ Pesan Utama:</strong>
+                            <div>✔ Pilih spesifikasi sesuai kebutuhan.</div>
+                            <div>✔ Cocokkan socket CPU dan jenis RAM dengan motherboard.</div>
+                            <div>✔ Cabut listrik dan lepas muatan statis sebelum menyentuh komponen.</div>
+                        </div>
+                    </div>
+                `
+            },
+            {
+                title: "📖 Glosarium Istilah Perangkat Keras",
+                badge: "Halaman 10 • Kamus Mini TJKT",
+                content: `
+                    <div class="space-y-2 text-xs sm:text-sm text-slate-200">
+                        <p class="m-0 text-slate-400">Ketuk istilah di bawah ini untuk melihat artinya:</p>
+                        ${[
+                            ["Socket", "Dudukan CPU pada motherboard."],
+                            ["Slot", "Lubang pemasangan modul atau kartu, misalnya RAM dan PCIe."],
+                            ["ESD (Electrostatic Discharge)", "Pelepasan listrik statis yang dapat merusak komponen."],
+                            ["POST (Power-On Self-Test)", "Pemeriksaan awal perangkat keras saat komputer menyala."],
+                            ["BIOS / UEFI", "Program awal yang menyiapkan perangkat sebelum sistem operasi berjalan."],
+                            ["PSU (Power Supply Unit)", "Penyuplai dan pengubah daya listrik AC ke DC untuk komponen komputer."]
+                        ].map(g => `
+                            <details class="bg-slate-800 border border-slate-700 rounded-xl p-3 cursor-pointer">
+                                <summary class="font-bold text-amber-300">${g[0]}</summary>
+                                <p class="mt-1.5 mb-0 text-slate-200">${g[1]}</p>
+                            </details>
+                        `).join('')}
+                    </div>
+                `
+            },
+            {
+                title: "🚀 Aktivitas Lanjutan & Kuis Eksternal",
+                badge: "Halaman 11 • Evaluasi & Refleksi",
+                content: `
+                    <div class="space-y-3 text-xs sm:text-sm text-slate-200">
+                        <p class="m-0">Selesai membaca modul? Uji pemahamanmu dengan menaklukkan labirin game ini atau buka kuis eksternal Wordwall:</p>
+                        <a href="https://wordwall.net/play/121938/349/397?wwmethod=link" target="_blank" rel="noopener noreferrer" class="flex items-center gap-3 bg-slate-800 hover:bg-slate-700 border border-sky-500/60 p-3 rounded-xl transition">
+                            <div class="w-12 h-10 rounded-lg bg-sky-600 flex items-center justify-center text-white font-bold shrink-0">🎯</div>
+                            <div class="flex-1">
+                                <strong class="block text-white">Kuis Interaktif (Wordwall)</strong>
+                                <small class="text-slate-400">Cek pemahamanmu dan lihat skor di tab baru</small>
+                            </div>
+                            <span class="text-xs text-sky-400 font-bold">Buka ↗</span>
+                        </a>
+                        <div class="bg-amber-950/40 border-2 border-dashed border-amber-500/60 rounded-xl p-3.5">
+                            <strong class="text-amber-300 block mb-1">📝 Refleksi Singkat:</strong>
+                            Tuliskan: 1) hal baru yang kamu pelajari, 2) bagian yang masih sulit, 3) jawaban barumu untuk masalah komputer lab yang lambat!
+                        </div>
+                    </div>
+                `
+            }
+        ];
+
+        let currentFbPage = 0;
+
+        function selectFbIposTab(idx) {
+            fbActiveTab = idx;
+            const t = FB_IPOS_TABS[idx];
+            document.querySelectorAll('.fb-tab-btn').forEach((btn, i) => {
+                btn.className = `fb-tab-btn p-2 rounded-xl border text-center font-bold transition ${i === idx ? 'bg-sky-600 border-sky-400 text-white' : 'bg-slate-800 border-slate-700 text-slate-300'}`;
+            });
+            const detail = document.getElementById('fb-ipos-detail');
+            if (detail) {
+                detail.innerHTML = `<strong class="text-amber-300 block mb-1">${t.i} ${t.n}</strong><p class="m-0">${t.d}</p><p class="mt-1 text-slate-300"><strong>Contoh perangkat:</strong> ${t.e}</p>`;
+            }
+        }
+
+        function renderFbMotherboard() {
+            const wrap = document.getElementById('fb-mobo-svg-wrap');
+            const chipsWrap = document.getElementById('fb-mobo-chips');
+            if (!wrap || !chipsWrap) return;
+
+            let svgHtml = `<svg viewBox="0 0 640 400" class="w-full h-auto block">
+                <rect x="4" y="4" width="632" height="392" rx="10" fill="#0e3b35" stroke="#2f7a6c" stroke-width="2"/>
+                <path d="M120 50V30H330M350 130H550V100M270 206V228M355 242H430V262M455 290H430M100 250H80M180 306V340H455" fill="none" stroke="#2f7a6c" stroke-width="2"/>`;
+
+            FB_MOBO_PARTS.forEach(d => {
+                const isSel = fbSelectedMobo === d.k;
+                const isSeen = !!fbSeenMobo[d.k];
+                const fill = isSel ? '#c98a2b' : (isSeen ? '#1f6b5e' : '#164e45');
+                const txtFill = isSel ? '#1d2b28' : '#eaf3ee';
+                const cx = d.x + d.w / 2;
+                const cy = d.y + d.h / 2;
+                const rot = d.h > d.w * 1.5 ? `transform="rotate(-90 ${cx} ${cy})"` : '';
+
+                svgHtml += `<g onclick="pickFbMoboPart('${d.k}')" style="cursor:pointer">`;
+                if (d.r) {
+                    svgHtml += `<circle cx="${d.x + d.r}" cy="${d.y + d.r}" r="${d.r}" fill="${fill}" stroke="#c98a2b" stroke-width="2"/>`;
+                } else {
+                    svgHtml += `<rect x="${d.x}" y="${d.y}" width="${d.w}" height="${d.h}" rx="4" fill="${fill}" stroke="#c98a2b" stroke-width="2"/>`;
+                }
+                svgHtml += `<text x="${cx}" y="${cy + 5}" text-anchor="middle" fill="${txtFill}" font-size="14" font-weight="700" ${rot}>${d.s}</text></g>`;
+            });
+
+            svgHtml += `</svg>`;
+            wrap.innerHTML = svgHtml;
+
+            chipsWrap.innerHTML = FB_MOBO_PARTS.map(d => {
+                const isSel = fbSelectedMobo === d.k;
+                const isSeen = !!fbSeenMobo[d.k];
+                const cls = isSel ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold' : (isSeen ? 'bg-emerald-900/60 text-emerald-300 border-emerald-600' : 'bg-slate-800 text-slate-300 border-slate-700');
+                return `<button onclick="pickFbMoboPart('${d.k}')" class="px-2.5 py-1 rounded-full border text-xs transition ${cls}">${d.n.split(' (')[0]}</button>`;
+            }).join('');
+
+            const seenCount = Object.keys(fbSeenMobo).length;
+            const prog = document.getElementById('fb-mobo-prog');
+            const status = document.getElementById('fb-mobo-status');
+            if (prog) prog.style.width = `${(seenCount / FB_MOBO_PARTS.length) * 100}%`;
+            if (status) status.textContent = `${seenCount} dari ${FB_MOBO_PARTS.length} komponen sudah dijelajahi.`;
+        }
+
+        function pickFbMoboPart(k) {
+            fbSeenMobo[k] = true;
+            fbSelectedMobo = k;
+            playSfx('coin');
+            renderFbMotherboard();
+            const d = FB_MOBO_PARTS.find(x => x.k === k);
+            const det = document.getElementById('fb-mobo-detail');
+            if (d && det) {
+                det.innerHTML = `
+                    <strong class="text-amber-300 text-sm block mb-1">${d.n}</strong>
+                    <div><strong class="text-sky-400">Fungsi:</strong> ${d.f}</div>
+                    <div><strong class="text-emerald-400">Ciri visual:</strong> ${d.c}</div>
+                    <div><strong class="text-rose-400">Catatan penting:</strong> ${d.t}</div>
+                `;
+            }
+        }
+
+        function renderFlipbook() {
+            const page = FLIPBOOK_PAGES[currentFbPage];
+            const strip = document.getElementById('fb-progress-strip');
+            if (strip) {
+                strip.innerHTML = FLIPBOOK_PAGES.map((_, idx) => `
+                    <div onclick="goFlipbookPage(${idx})" class="cursor-pointer flex-1 h-1.5 rounded-full transition ${idx < currentFbPage ? 'bg-amber-500' : (idx === currentFbPage ? 'bg-sky-400' : 'bg-slate-800')}"></div>
+                `).join('');
+            }
+
+            const bodyEl = document.getElementById('flipbook-content');
+            bodyEl.innerHTML = `
+                <span class="inline-block bg-sky-500/20 text-sky-300 border border-sky-500/40 px-2.5 py-0.5 rounded-full text-xs font-bold mb-2">${page.badge}</span>
+                <h3 class="text-base sm:text-lg font-game font-bold text-white mb-3">${page.title}</h3>
+                ${page.content}
+            `;
+            bodyEl.scrollTop = 0;
+
+            if (typeof page.onRender === 'function') {
+                page.onRender();
+            }
+
+            document.getElementById('fb-page-indicator').textContent = `Halaman ${currentFbPage + 1} / ${FLIPBOOK_PAGES.length}`;
+            document.getElementById('btn-fb-prev').disabled = currentFbPage === 0;
+            document.getElementById('btn-fb-prev').classList.toggle('opacity-40', currentFbPage === 0);
+            document.getElementById('btn-fb-next').disabled = currentFbPage === FLIPBOOK_PAGES.length - 1;
+            document.getElementById('btn-fb-next').classList.toggle('opacity-40', currentFbPage === FLIPBOOK_PAGES.length - 1);
+        }
+
+        function goFlipbookPage(pageIdx) {
+            currentFbPage = Math.max(0, Math.min(FLIPBOOK_PAGES.length - 1, pageIdx));
+            renderFlipbook();
+        }
+
+        function changeFlipbookPage(delta) {
+            goFlipbookPage(currentFbPage + delta);
+        }
+
+        /* =========================================================================
+           5. UI NAVIGATION & MODAL HELPERS
+           ========================================================================= */
+        function showScreen(screenId) {
+            ['screen-menu', 'screen-hero', 'screen-game'].forEach(id => {
+                document.getElementById(id).classList.add('hidden');
+            });
+            document.getElementById(screenId).classList.remove('hidden');
+        }
+
+        function openModal(modalId) {
+            if (modalId === 'modal-flipbook') renderFlipbook();
+            document.getElementById(modalId).classList.remove('hidden');
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.add('hidden');
+        }
+
+        function openHeroSelect() {
+            renderHeroCards();
+            showScreen('screen-hero');
+        }
+
+        function renderHeroCards() {
+            const container = document.getElementById('hero-cards-container');
+            container.innerHTML = HEROES.map(h => {
+                const isSelected = h.id === selectedHeroId;
+                return `
+                    <div onclick="selectHero('${h.id}')" class="cursor-pointer rounded-2xl p-4 border-2 transition-all ${isSelected ? h.borderClass + ' ' + h.bgClass + ' scale-[1.02] shadow-lg' : 'border-slate-800 bg-slate-900/90 hover:border-slate-600'}">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="w-16 h-16 bg-slate-800 p-1 rounded-xl border border-slate-700 overflow-hidden">${getHeroCartoonSVG(h.id)}</div>
+                            ${isSelected ? '<span class="text-xs bg-amber-500 text-slate-950 font-bold px-2 py-0.5 rounded-full">DIPILIH</span>' : ''}
+                        </div>
+                        <h3 class="text-lg font-game font-bold text-white">${h.name}</h3>
+                        <div class="text-xs font-semibold text-amber-400 mb-2">${h.role}</div>
+                        <div class="bg-slate-950/70 rounded-xl p-2.5 text-xs text-slate-300 border border-slate-800">
+                            <strong class="text-sky-400 block mb-0.5">⚡ ${h.skillName}</strong>
+                            ${h.skillDesc}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function selectHero(id) {
+            selectedHeroId = id;
+            playSfx('coin');
+            renderHeroCards();
+        }
+
+        /* =========================================================================
+           6. RUANG GURU (EDITOR SOAL DINAMIS SEPUASNYA)
+           ========================================================================= */
+        function openTeacherRoom() {
+            document.getElementById('teacher-subject-name').value = activeSubject;
+            renderTeacherQuestions();
+            openModal('modal-teacher');
+        }
+
+        function renderTeacherQuestions() {
+            const listEl = document.getElementById('teacher-questions-list');
+            listEl.innerHTML = questionsList.map((q, idx) => `
+                <div class="bg-slate-900/95 border border-amber-800/50 rounded-xl p-4 space-y-2.5">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <span class="bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2.5 py-0.5 rounded-lg text-xs font-bold">Soal #${idx + 1}</span>
+                            <select onchange="updateQuestionField(${idx}, 'floor', parseInt(this.value))" class="bg-slate-800 border border-slate-600 rounded-lg px-2 py-1 text-xs text-white">
+                                ${[1,2,3,4,5].map(f => `<option value="${f}" ${q.floor === f ? 'selected' : ''}>Lantai ${f}</option>`).join('')}
+                            </select>
+                        </div>
+                        ${questionsList.length > 5 ? `<button onclick="deleteQuestion(${idx})" class="text-xs bg-rose-600/30 hover:bg-rose-600 text-rose-200 px-2.5 py-1 rounded-lg">Hapus</button>` : ''}
+                    </div>
+                    <div>
+                        <label class="block text-[11px] text-slate-400 mb-1">Pertanyaan:</label>
+                        <input type="text" value="${escapeHtml(q.question)}" oninput="updateQuestionField(${idx}, 'question', this.value)" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs sm:text-sm text-white">
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        ${q.options.map((opt, optIdx) => `
+                            <div class="flex items-center gap-1.5">
+                                <input type="radio" name="correct_${idx}" ${q.correctIndex === optIdx ? 'checked' : ''} onchange="updateQuestionField(${idx}, 'correctIndex', ${optIdx})" title="Tandai sebagai jawaban benar">
+                                <span class="text-xs font-bold text-amber-400">${['A','B','C','D'][optIdx]}.</span>
+                                <input type="text" value="${escapeHtml(opt)}" oninput="updateOptionField(${idx}, ${optIdx}, this.value)" class="w-full bg-slate-950 border ${q.correctIndex === optIdx ? 'border-emerald-500' : 'border-slate-700'} rounded-lg px-2.5 py-1 text-xs text-white">
+                            </div>
+                        `).join('')}
+                    </div>
+                    <div>
+                        <label class="block text-[11px] text-slate-400 mb-1">Pembahasan / Umpan Balik Singkat:</label>
+                        <input type="text" value="${escapeHtml(q.explanation || '')}" oninput="updateQuestionField(${idx}, 'explanation', this.value)" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1 text-xs text-slate-300">
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function escapeHtml(str) {
+            return String(str).replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        function updateQuestionField(idx, field, val) {
+            questionsList[idx][field] = val;
+            if (field === 'correctIndex') renderTeacherQuestions();
+        }
+
+        function updateOptionField(qIdx, optIdx, val) {
+            questionsList[qIdx].options[optIdx] = val;
+        }
+
+        function addNewQuestion() {
+            questionsList.push({
+                floor: (questionsList.length % 5) + 1,
+                tp: "Soal Tambahan Guru",
+                question: "Tuliskan pertanyaan baru di sini...",
+                options: ["Pilihan A", "Pilihan B", "Pilihan C", "Pilihan D"],
+                correctIndex: 0,
+                explanation: "Penjelasan jawaban benar."
+            });
+            renderTeacherQuestions();
+            const listEl = document.getElementById('teacher-questions-list');
+            listEl.scrollTop = listEl.scrollHeight;
+        }
+
+        function deleteQuestion(idx) {
+            if (questionsList.length <= 5) return;
+            questionsList.splice(idx, 1);
+            renderTeacherQuestions();
+        }
+
+        function resetDefaultQuestions() {
+            activeSubject = DEFAULT_SUBJECT;
+            questionsList = JSON.parse(JSON.stringify(DEFAULT_QUESTIONS));
+            document.getElementById('teacher-subject-name').value = activeSubject;
+            renderTeacherQuestions();
+            showTeacherStatus("Soal dikembalikan ke materi standar Hard-Explorer!");
+        }
+
+        function saveTeacherChanges() {
+            const subInput = document.getElementById('teacher-subject-name').value.trim();
+            if (subInput) activeSubject = subInput;
+            document.getElementById('menu-active-subject').textContent = activeSubject;
+            try {
+                localStorage.setItem('hard_explorer_subject', activeSubject);
+                localStorage.setItem('hard_explorer_questions', JSON.stringify(questionsList));
+            } catch (e) {}
+            showTeacherStatus("Berhasil disimpan! Paket soal siap dimainkan.");
+            playSfx('correct');
+        }
+
+        function showTeacherStatus(msg) {
+            const el = document.getElementById('teacher-status-msg');
+            el.textContent = msg;
+            setTimeout(() => { el.textContent = ''; }, 3000);
+        }
+
+        function exportQuestionsJSON() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({ subject: activeSubject, questions: questionsList }, null, 2));
+            const a = document.createElement('a');
+            a.setAttribute("href", dataStr);
+            a.setAttribute("download", "paket_soal_hard_explorer.json");
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+        }
+
+        /* =========================================================================
+           7. GAME ENGINE (2D PLATFORMER DUNGEON LABIRIN PERANGKAT KERAS)
+           ========================================================================= */
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let gameState = {
+            running: false,
+            paused: false,
+            playerName: 'Siswa TJKT',
+            hero: HEROES[0],
+            hp: 130,
+            maxHp: 130,
+            score: 0,
+            floor: 1,
+            maxFloors: 5,
+            hints: 2,
+            totalAnswered: 0,
+            totalCorrect: 0,
+            usedQuestionIndices: new Set()
+        };
+
+        // Player physics entity
+        let player = {
+            x: 80, y: 200, w: 38, h: 46,
+            vx: 0, vy: 0,
+            speed: 4.5,
+            jumpForce: -12.5,
+            grounded: false,
+            facing: 1
+        };
+
+        // Level entities
+        let platforms = [];
+        let coins = [];
+        let spikes = [];
+        let patrols = [];
+        let lasers = [];
+        let hazardTick = 0;
+        let monster = null;
+        let door = null;
+        let cameraX = 0;
+        let worldWidth = 1400;
+        let floorHeight = 450;
+
+        // Input tracking
+        const keys = { left: false, right: false, up: false };
+        const joy = { x: 0, id: null };
+
+        // Polyfill roundRect untuk browser lama (Safari < 16, WebView lama)
+        if (typeof CanvasRenderingContext2D !== 'undefined' && !CanvasRenderingContext2D.prototype.roundRect) {
+            CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
+                let rad = Array.isArray(r) ? r.slice() : [r || 0];
+                if (rad.length === 1) rad = [rad[0], rad[0], rad[0], rad[0]];
+                else if (rad.length === 2) rad = [rad[0], rad[1], rad[0], rad[1]];
+                else if (rad.length === 3) rad = [rad[0], rad[1], rad[2], rad[1]];
+                const [tl, tr, br, bl] = rad;
+                this.moveTo(x + tl, y);
+                this.lineTo(x + w - tr, y);
+                this.arcTo(x + w, y, x + w, y + tr, tr);
+                this.lineTo(x + w, y + h - br);
+                this.arcTo(x + w, y + h, x + w - br, y + h, br);
+                this.lineTo(x + bl, y + h);
+                this.arcTo(x, y + h, x, y + h - bl, bl);
+                this.lineTo(x, y + tl);
+                this.arcTo(x, y, x + tl, y, tl);
+                this.closePath();
+            };
+        }
+
+        // Floor Themes (Sesuai 5 TP)
+        const FLOOR_THEMES = [
+            { name: "Lantai 1: Zona Motherboard & Komponen Inti", bg1: "#1e1b4b", bg2: "#0f172a", crystal: "#38bdf8", monsterName: "Debu Korosi", monsterIcon: "👾" },
+            { name: "Lantai 2: Jalur Bus Data & Siklus IPOS", bg1: "#172554", bg2: "#090d16", crystal: "#818cf8", monsterName: "Bottleneck RAM", monsterIcon: "🐌" },
+            { name: "Lantai 3: Gerbang Port & Konektor I/O", bg1: "#064e3b", bg2: "#022c22", crystal: "#34d399", monsterName: "Korsleting Pin", monsterIcon: "🔌" },
+            { name: "Lantai 4: Ruang Perakitan & Spesifikasi", bg1: "#3b0764", bg2: "#1e1b4b", crystal: "#c084fc", monsterName: "Inkompatibel Bug", monsterIcon: "🤖" },
+            { name: "Lantai 5: Benteng K3LH & Listrik Statis", bg1: "#450a0a", bg2: "#18181b", crystal: "#fbbf24", monsterName: "Raja ESD Statis", monsterIcon: "⚡" }
+        ];
+
+        function resizeCanvas() {
+            const container = document.getElementById('canvas-container');
+            if (!container || container.clientWidth === 0 || container.clientHeight === 0) return;
+            const oldH = canvas.height;
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+            floorHeight = canvas.height;
+            // Susun ulang lantai bila tinggi layar berubah (rotasi HP), progres lantai tetap dipertahankan
+            if (gameState && gameState.running && oldH && oldH !== canvas.height && platforms.length) {
+                buildFloor(gameState.floor, true);
+            }
+        }
+
+        function updateTouchUI() {
+            const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+            const hasTouch = (navigator.maxTouchPoints || 0) > 0;
+            const useTouch = coarse || (hasTouch && window.innerWidth <= 1024);
+            document.body.classList.toggle('touch-ui', useTouch);
+            if (!useTouch) resetInput();
+            resizeCanvas();
+        }
+        window.addEventListener('resize', updateTouchUI);
+        window.addEventListener('orientationchange', () => setTimeout(updateTouchUI, 250));
+
+        function startGame() {
+            initAudio();
+            const nameInput = document.getElementById('input-player-name').value.trim();
+            const chosenHero = HEROES.find(h => h.id === selectedHeroId) || HEROES[0];
+
+            gameState = {
+                running: true,
+                paused: false,
+                playerName: nameInput || chosenHero.name,
+                hero: chosenHero,
+                hp: chosenHero.maxHp,
+                maxHp: chosenHero.maxHp,
+                score: 0,
+                floor: 1,
+                maxFloors: 5,
+                hints: chosenHero.id === 'archer' ? 3 : 2,
+                totalAnswered: 0,
+                totalCorrect: 0,
+                usedQuestionIndices: new Set()
+            };
+
+            saveGameProgress();
+            showScreen('screen-game');
+            startBgm('adventure');
+            resizeCanvas();
+            updateHUD();
+            buildFloor(1);
+            startLoop();
+        }
+
+        /* =========================================================================
+           SAVE PROGRESS (localStorage)
+           ========================================================================= */
+        const SAVE_PROGRESS_KEY = 'hard_explorer_saved_progress_v1';
+
+        function saveGameProgress() {
+            if (!gameState || gameState.hp <= 0) return;
+            try {
+                const payload = {
+                    playerName: gameState.playerName,
+                    heroId: gameState.hero.id,
+                    hp: gameState.hp,
+                    maxHp: gameState.maxHp,
+                    score: gameState.score,
+                    floor: gameState.floor,
+                    maxFloors: gameState.maxFloors,
+                    hints: gameState.hints,
+                    totalAnswered: gameState.totalAnswered,
+                    totalCorrect: gameState.totalCorrect,
+                    usedQuestionIndices: Array.from(gameState.usedQuestionIndices),
+                    subject: activeSubject,
+                    savedAt: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+                };
+                localStorage.setItem(SAVE_PROGRESS_KEY, JSON.stringify(payload));
+            } catch (e) {}
+        }
+
+        function clearSavedProgress() {
+            try {
+                localStorage.removeItem(SAVE_PROGRESS_KEY);
+            } catch (e) {}
+            refreshContinueButton();
+        }
+
+        function refreshContinueButton() {
+            const btn = document.getElementById('btn-continue-saved');
+            const label = document.getElementById('btn-continue-label');
+            if (!btn || !label) return;
+            try {
+                const raw = localStorage.getItem(SAVE_PROGRESS_KEY);
+                if (raw) {
+                    const data = JSON.parse(raw);
+                    if (data && data.floor && data.floor <= (data.maxFloors || 5)) {
+                        label.textContent = `LANJUTKAN: ${data.playerName} (Lantai ${data.floor}/${data.maxFloors || 5} • Skor ${Math.round(data.score)})`;
+                        btn.classList.remove('hidden');
+                        return;
+                    }
+                }
+            } catch (e) {}
+            btn.classList.add('hidden');
+        }
+
+        function resumeSavedGame() {
+            try {
+                const raw = localStorage.getItem(SAVE_PROGRESS_KEY);
+                if (!raw) return;
+                const data = JSON.parse(raw);
+                const chosenHero = HEROES.find(h => h.id === data.heroId) || HEROES[0];
+
+                initAudio();
+                gameState = {
+                    running: true,
+                    paused: false,
+                    playerName: data.playerName || chosenHero.name,
+                    hero: chosenHero,
+                    hp: data.hp || chosenHero.maxHp,
+                    maxHp: data.maxHp || chosenHero.maxHp,
+                    score: data.score || 0,
+                    floor: data.floor || 1,
+                    maxFloors: data.maxFloors || 5,
+                    hints: typeof data.hints === 'number' ? data.hints : 2,
+                    totalAnswered: data.totalAnswered || 0,
+                    totalCorrect: data.totalCorrect || 0,
+                    usedQuestionIndices: new Set(data.usedQuestionIndices || [])
+                };
+
+                showScreen('screen-game');
+                startBgm('adventure');
+                resizeCanvas();
+                updateHUD();
+                buildFloor(gameState.floor);
+                showGameToast(`⏯️ Melanjutkan petualangan ${gameState.playerName} di Lantai ${gameState.floor}!`);
+                startLoop();
+            } catch (e) {
+                openHeroSelect();
+            }
+        }
+
+        const GRAVITY = 0.58;
+
+        // Tata letak tiap lantai berbeda: panjang lantai, jumlah anak tangga, jenis dan posisi rintangan.
+        // Rintangan: spike = sengatan statis (diam), patrol = paket data liar (bergerak), laser = sinar berkedip.
+        const FLOOR_LAYOUTS = [
+            { // Lantai 1: Zona Motherboard (pengenalan, 3 anak tangga)
+                width: 1450, steps: 3, stairX: 900, stepW: 130, gap: 30, lastW: 200, finishPosition: "top",
+                spikes: [300, 700], patrols: [], lasers: [], bonus: [],
+                monsterX: 520, groundCoins: [240, 430], labels: ["CPU", "RAM", "SSD", "GPU", "USB"],
+                hint: "Waspadai sengatan statis"
+            },
+            { // Lantai 2: Jalur Bus Data (paket data bergerak)
+                width: 1800, steps: 4, stairX: 1130, stepW: 120, gap: 28, lastW: 200, finishPosition: "right",
+                spikes: [260, 1000], lasers: [],
+                patrols: [{ x1: 430, x2: 720, speed: 1.7, icon: "📦" }],
+                bonus: [{ x: 470, w: 150 }],
+                monsterX: 840, groundCoins: [190, 790], labels: ["BUS", "NIC", "HDD", "PSU", "FAN", "IPOS"],
+                hint: "Hindari paket data yang bergerak"
+            },
+            { // Lantai 3: Gerbang Port (rintangan lebih rapat)
+                width: 1900, steps: 4, stairX: 1230, stepW: 110, gap: 34, lastW: 190, finishPosition: "top",
+                spikes: [250, 640, 1010], lasers: [],
+                patrols: [{ x1: 760, x2: 960, speed: 2.0, icon: "🔌" }],
+                bonus: [{ x: 590, w: 150 }],
+                monsterX: 440, groundCoins: [170, 880, 1120], labels: ["HDMI", "VGA", "LAN", "AUD", "PORT", "DVI"],
+                hint: "Awas korsleting di jalur port"
+            },
+            { // Lantai 4: Ruang Perakitan (laser berkedip dan duri di anak tangga)
+                width: 2000, steps: 5, stairX: 1100, stepW: 130, gap: 34, lastW: 190, finishPosition: "right",
+                spikes: [260, 480], patrols: [],
+                lasers: [
+                    { x: 800, on: 70, cycle: 210, offset: 0 },
+                    { x: 1010, on: 70, cycle: 210, offset: 105 }
+                ],
+                bonus: [],
+                monsterX: 640, groundCoins: [180, 380, 900], labels: ["MOBO", "CPU", "RAM", "SSD", "GPU", "PSU", "FAN"],
+                hint: "Tunggu sinar laser padam sebelum lewat"
+            },
+            { // Lantai 5: Benteng K3LH (semua jenis rintangan)
+                width: 2150, steps: 5, stairX: 1240, stepW: 130, gap: 36, lastW: 190, finishPosition: "top",
+                spikes: [240, 520, 1150],
+                patrols: [{ x1: 640, x2: 920, speed: 2.2, icon: "⚡" }],
+                lasers: [{ x: 1030, on: 80, cycle: 190, offset: 40 }],
+                
+                bonus: [{ x: 540, w: 140 }],
+                monsterX: 380, groundCoins: [170, 460, 960], labels: ["ESD", "K3", "APD", "GND", "MAT", "LH", "SOP", "PSU"],
+                hint: "Semua rintangan aktif, tetap fokus"
+            }
+        ];
+
+        function laserPhase(lz) { return (hazardTick + lz.offset) % lz.cycle; }
+        function laserActive(lz) { return laserPhase(lz) < lz.on; }
+
+        // Tinggi permukaan pijakan tertinggi di bawah titik x (dipakai untuk menempatkan pemain)
+        function surfaceTopAt(px) {
+            const cx = px + player.w / 2;
+            let best = null;
+            for (const p of platforms) {
+                if (cx >= p.x && cx <= p.x + p.w && (best === null || p.y < best)) best = p.y;
+            }
+            return best;
+        }
+
+        function buildFloor(floorNum, keepState) {
+            const L = FLOOR_LAYOUTS[(floorNum - 1) % FLOOR_LAYOUTS.length];
+            const h = canvas.height || 450;
+            const groundY = h - 56;
+            worldWidth = L.width;
+            floorHeight = h;
+
+            const prev = keepState ? {
+                coins: coins.map(c => c.collected),
+                monsterDefeated: monster ? monster.defeated : false,
+                doorUnlocked: door ? door.unlocked : false
+            } : null;
+
+            if (!keepState) {
+                cameraX = 0;
+                player.x = 150; // di kanan area joystick sentuh
+                player.y = groundY - player.h;
+                player.vx = 0;
+                player.vy = 0;
+                player.grounded = true;
+                spikeCooldown = 0;
+                knockbackFrames = 0;
+            }
+            hazardTick = 0;
+
+            const theme = FLOOR_THEMES[(floorNum - 1) % FLOOR_THEMES.length];
+            document.getElementById('hud-objective').textContent = `${theme.name} — ${L.hint}. Kalahkan ${theme.monsterName} & buka Pintu Soal!`;
+
+            // Tangga: tinggi tiap pijakan dihitung dari tinggi layar.
+            // Lompatan hanya cukup untuk naik 1 pijakan (1.4x tinggi pijakan), tidak cukup untuk 2 pijakan (2x).
+            const stepH = Math.max(26, Math.min(76, (groundY - 92) / L.steps));
+            player.jumpForce = -Math.sqrt(2 * GRAVITY * stepH * 1.4);
+
+            platforms = [{ x: 0, y: groundY, w: worldWidth, h: 60, isGround: true }];
+            const stairs = [];
+            for (let i = 0; i < L.steps; i++) {
+                const last = i === L.steps - 1;
+                const p = {
+                    x: L.stairX + i * (L.stepW + L.gap),
+                    y: groundY - (i + 1) * stepH,
+                    w: last ? L.lastW : L.stepW,
+                    h: 20,
+                    step: i + 1
+                };
+                platforms.push(p);
+                stairs.push(p);
+            }
+            const topStep = stairs[stairs.length - 1];
+
+            // Pijakan bonus rendah (setinggi 1 anak tangga, jauh dari tangga sehingga bukan jalan pintas)
+            (L.bonus || []).forEach(b => {
+                platforms.push({ x: b.x, y: groundY - stepH, w: b.w, h: 20, bonus: true });
+            });
+
+            // Koin data: di lantai dasar, pijakan bonus, dan tiap anak tangga
+            let li = 0;
+            const nextLabel = () => L.labels[li++ % L.labels.length];
+            coins = [];
+            L.groundCoins.forEach(x => coins.push({ x, y: groundY - 40, collected: false, label: nextLabel() }));
+            (L.bonus || []).forEach(b => {
+                coins.push({ x: b.x + b.w / 2, y: groundY - stepH - 40, collected: false, label: nextLabel() });
+            });
+            stairs.forEach(p => coins.push({ x: p.x + Math.min(p.w, 130) / 2, y: p.y - 40, collected: false, label: nextLabel() }));
+
+            // Rintangan
+            spikes = L.spikes.map(x => ({ x, y: groundY - 22, w: 44, h: 22 }));
+            patrols = (L.patrols || []).map(pt => ({
+                x1: pt.x1, x2: pt.x2, x: pt.x1, y: groundY - 30, w: 34, h: 30,
+                speed: pt.speed, dir: 1, icon: pt.icon
+            }));
+            const laserH = Math.min(groundY - 30, 190);
+            lasers = (L.lasers || []).map(lz => ({
+                x: lz.x, y: groundY - laserH, w: 14, h: laserH,
+                on: lz.on, cycle: lz.cycle, offset: lz.offset
+            }));
+
+            monster = {
+                x: L.monsterX,
+                y: groundY - 58,
+                w: 54,
+                h: 58,
+                name: theme.monsterName,
+                icon: theme.monsterIcon,
+                defeated: false,
+                hp: 100,
+                maxHp: 100,
+                bobOffset: 0
+            };
+
+            // Posisi finish bervariasi: sebagian lantai di atas tangga, sebagian di ujung kanan jalur.
+            const finishAtRight = L.finishPosition === "right";
+            door = {
+                x: finishAtRight ? worldWidth - 96 : topStep.x + topStep.w - 76,
+                y: finishAtRight ? groundY - 76 : topStep.y - 76,
+                w: 56,
+                h: 76,
+                unlocked: false
+            };
+
+            if (prev && prev.coins.length === coins.length) {
+                coins.forEach((c, i) => { c.collected = !!prev.coins[i]; });
+                monster.defeated = prev.monsterDefeated;
+                door.unlocked = prev.doorUnlocked;
+            } else if (prev) {
+                monster.defeated = prev.monsterDefeated;
+                door.unlocked = prev.doorUnlocked;
+            }
+            if (prev) {
+                const top = surfaceTopAt(player.x);
+                if (top !== null) { player.y = top - player.h; player.vy = 0; player.grounded = true; }
+            }
+
+            updateHUD();
+        }
+
+        function updateHUD() {
+            document.getElementById('hud-hero-icon').innerHTML = getHeroCartoonSVG(gameState.hero.id);
+            document.getElementById('hud-player-name').textContent = gameState.playerName;
+            document.getElementById('hud-hero-role').textContent = gameState.hero.role;
+            document.getElementById('hud-floor').textContent = `${gameState.floor} / ${gameState.maxFloors}`;
+            document.getElementById('hud-score').textContent = Math.round(gameState.score);
+            document.getElementById('hint-count').textContent = gameState.hints;
+
+            const hpPct = Math.max(0, Math.min(100, (gameState.hp / gameState.maxHp) * 100));
+            document.getElementById('hud-hp-bar').style.width = hpPct + '%';
+            document.getElementById('hud-hp-text').textContent = `${gameState.hp} / ${gameState.maxHp}`;
+        }
+
+        function showGameToast(msg) {
+            const toast = document.getElementById('game-toast');
+            toast.textContent = msg;
+            toast.classList.remove('hidden');
+            clearTimeout(toast._timer);
+            toast._timer = setTimeout(() => toast.classList.add('hidden'), 1800);
+        }
+
+        /* =========================================================================
+           8. GAME LOOP & PHYSICS
+           ========================================================================= */
+        let spikeCooldown = 0;
+        let knockbackFrames = 0;
+        let knockbackVx = 0;
+        let rafId = 0;
+        let lastTs = 0;
+        let accumulator = 0;
+        const STEP_MS = 1000 / 60; // fisika tetap 60 FPS agar sama di semua layar (60/90/120 Hz)
+
+        function startLoop() {
+            cancelAnimationFrame(rafId);
+            lastTs = 0;
+            accumulator = 0;
+            rafId = requestAnimationFrame(gameLoop);
+        }
+
+        function gameLoop(ts) {
+            if (!gameState.running) { rafId = 0; return; }
+            if (!lastTs) lastTs = ts;
+            let dt = ts - lastTs;
+            lastTs = ts;
+            if (dt > 100) dt = 100;
+
+            if (!gameState.paused) {
+                accumulator += dt;
+                while (accumulator >= STEP_MS) {
+                    updatePhysics();
+                    accumulator -= STEP_MS;
+                    if (!gameState.running || gameState.paused) { accumulator = 0; break; }
+                }
+                renderScene();
+            } else {
+                accumulator = 0;
+            }
+            rafId = requestAnimationFrame(gameLoop);
+        }
+
+        function resetInput() {
+            keys.left = keys.right = keys.up = false;
+            joy.x = 0;
+            joy.id = null;
+            const knob = document.getElementById('joy-knob');
+            if (knob) knob.style.transform = 'translate(0px, 0px)';
+            const jb = document.getElementById('tc-jump');
+            if (jb) jb.classList.remove('pressed');
+        }
+
+        // Sistem nyawa: tiap rintangan mengurangi 10 HP. HP 0 langsung Game Over.
+        const OBSTACLE_DAMAGE = 10;
+
+        function damagePlayer(amount, msg) {
+            if (!gameState.running || gameState.hp <= 0) return;
+            gameState.hp = Math.max(0, gameState.hp - amount);
+            playSfx('hit');
+            updateHUD();
+            if (gameState.hp <= 0) {
+                handleGameOver();
+                return;
+            }
+            saveGameProgress();
+            showGameToast(`${msg || '⚠️ Terkena rintangan!'} (-${amount} HP)`);
+        }
+
+        function handleGameOver() {
+            resetInput();
+            gameState.paused = false;
+            gameState.running = false;
+            clearSavedProgress();
+            playSfx('wrong');
+            renderScene();
+            triggerVictoryOrGameOver(false);
+        }
+
+        function updatePhysics() {
+            // Gerak horizontal: joystick analog (nilai -1..1) atau keyboard / tombol
+            let axis = 0;
+            if (keys.left) axis -= 1;
+            if (keys.right) axis += 1;
+            if (axis === 0 && joy.x !== 0) axis = joy.x;
+            axis = Math.max(-1, Math.min(1, axis));
+
+            if (knockbackFrames > 0) {
+                knockbackFrames--;
+                player.vx = knockbackVx;
+            } else if (axis !== 0) {
+                player.vx = axis * player.speed;
+                player.facing = axis < 0 ? -1 : 1;
+            } else {
+                player.vx *= 0.75;
+                if (Math.abs(player.vx) < 0.2) player.vx = 0;
+            }
+
+            // Lompat
+            if (keys.up && player.grounded && knockbackFrames === 0) {
+                player.vy = player.jumpForce;
+                player.grounded = false;
+                playSfx('jump');
+            }
+
+            // Gravitasi dan posisi
+            const prevBottom = player.y + player.h;
+            player.vy = Math.min(player.vy + GRAVITY, 14);
+            player.x += player.vx;
+            player.y += player.vy;
+
+            // Batas dunia
+            if (player.x < 10) player.x = 10;
+            if (player.x + player.w > worldWidth - 10) player.x = worldWidth - 10 - player.w;
+
+            // Tumbukan pijakan: hanya bisa mendarat dari atas (pijakan satu arah).
+            // Pemain tidak bisa "tertarik" naik ke pijakan dari bawah, jadi tiap anak tangga harus dinaiki berurutan.
+            player.grounded = false;
+            for (const plat of platforms) {
+                if (
+                    player.vy >= 0 &&
+                    player.x + player.w > plat.x + 4 &&
+                    player.x < plat.x + plat.w - 4 &&
+                    prevBottom <= plat.y + 1 &&
+                    player.y + player.h >= plat.y
+                ) {
+                    player.y = plat.y - player.h;
+                    player.vy = 0;
+                    player.grounded = true;
+                }
+            }
+
+            // Koin
+            for (const c of coins) {
+                if (!c.collected && rectIntersect(player.x, player.y, player.w, player.h, c.x - 14, c.y - 14, 28, 28)) {
+                    c.collected = true;
+                    gameState.score += Math.round(15 * gameState.hero.bonusScore);
+                    playSfx('coin');
+                    updateHUD();
+                    showGameToast(`+15 Data ${c.label}!`);
+                }
+            }
+
+            // Rintangan (spike, paket data bergerak, laser): tiap sentuhan -10 HP dan karakter terpental
+            hazardTick++;
+            for (const pt of patrols) {
+                pt.x += pt.dir * pt.speed;
+                if (pt.x <= pt.x1) { pt.x = pt.x1; pt.dir = 1; }
+                if (pt.x + pt.w >= pt.x2) { pt.x = pt.x2 - pt.w; pt.dir = -1; }
+            }
+            if (spikeCooldown > 0) spikeCooldown--;
+            if (spikeCooldown === 0) {
+                const hx = player.x + 6, hy = player.y + 6, hw = player.w - 12, hh = player.h - 8;
+                let hit = null;
+                for (const sp of spikes) {
+                    if (rectIntersect(hx, hy, hw, hh, sp.x, sp.y, sp.w, sp.h)) {
+                        hit = { cx: sp.x + sp.w / 2, msg: "⚠️ Terkena Sengatan Statis ESD!" };
+                        break;
+                    }
+                }
+                if (!hit) {
+                    for (const pt of patrols) {
+                        if (rectIntersect(hx, hy, hw, hh, pt.x, pt.y, pt.w, pt.h)) {
+                            hit = { cx: pt.x + pt.w / 2, msg: "⚡ Tersambar paket data liar!" };
+                            break;
+                        }
+                    }
+                }
+                if (!hit) {
+                    for (const lz of lasers) {
+                        if (laserActive(lz) && rectIntersect(hx, hy, hw, hh, lz.x, lz.y, lz.w, lz.h)) {
+                            hit = { cx: lz.x + lz.w / 2, msg: "🔴 Terkena sinar laser!" };
+                            break;
+                        }
+                    }
+                }
+                if (hit) {
+                    spikeCooldown = 60;
+                    player.vy = -8; // terpental ke atas
+                    player.grounded = false;
+                    knockbackFrames = 14;
+                    knockbackVx = (player.x + player.w / 2 < hit.cx ? -1 : 1) * 3.6;
+                    damagePlayer(OBSTACLE_DAMAGE, hit.msg);
+                    if (!gameState.running) return;
+                }
+            }
+
+            // Monster
+            if (monster && !monster.defeated) {
+                monster.bobOffset = Math.sin(Date.now() / 220) * 4;
+                if (rectIntersect(player.x, player.y, player.w, player.h, monster.x - 10, monster.y, monster.w + 20, monster.h)) {
+                    resetInput();
+                    triggerQuizChallenge('monster');
+                    return;
+                }
+            }
+
+            // Pintu
+            if (door && rectIntersect(player.x, player.y, player.w, player.h, door.x - 10, door.y, door.w + 20, door.h)) {
+                if (monster && !monster.defeated) {
+                    showGameToast(`🔒 Kalahkan ${monster.name} terlebih dahulu!`);
+                    player.x = door.x - player.w - 16;
+                } else if (!door.unlocked) {
+                    resetInput();
+                    triggerQuizChallenge('door');
+                    return;
+                }
+            }
+
+            // Kamera
+            const targetCamX = player.x - canvas.width * 0.35;
+            cameraX += (targetCamX - cameraX) * 0.12;
+            cameraX = Math.max(0, Math.min(worldWidth - canvas.width, cameraX));
+        }
+
+        function rectIntersect(x1, y1, w1, h1, x2, y2, w2, h2) {
+            return x1 < x2 + w2 && x1 + w1 > x2 && y1 < y2 + h2 && y1 + h1 > y2;
+        }
+
+        // Dekorasi latar tiap lantai berbeda: kristal, jalur data, port, chip, petir
+        function drawBackdrop(idx, theme, w, h) {
+            const par = 0.6;
+            const base = h - 75;
+            const t = Date.now() / 1000;
+            ctx.save();
+            ctx.strokeStyle = theme.crystal;
+            ctx.fillStyle = theme.crystal;
+            if (idx === 0) {
+                ctx.globalAlpha = 0.2;
+                for (let k = 0; k < 8; k++) {
+                    const cx = 140 + k * 260 - cameraX * par;
+                    if (cx < -40 || cx > w + 40) continue;
+                    ctx.beginPath();
+                    ctx.moveTo(cx, base - 35);
+                    ctx.lineTo(cx + 16, base);
+                    ctx.lineTo(cx - 16, base);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+            } else if (idx === 1) {
+                ctx.lineWidth = 2;
+                [0.22, 0.42, 0.62].forEach((f, j) => {
+                    const y = h * f;
+                    ctx.globalAlpha = 0.14;
+                    ctx.beginPath();
+                    ctx.moveTo(0, y);
+                    ctx.lineTo(w, y);
+                    ctx.stroke();
+                    ctx.globalAlpha = 0.4;
+                    for (let k = 0; k < 6; k++) {
+                        const x = ((t * 50 * (j + 1) + k * 190) % (w + 120)) - 60;
+                        ctx.fillRect(x, y - 4, 18, 8);
+                    }
+                });
+            } else if (idx === 2) {
+                ctx.lineWidth = 2;
+                for (let k = 0; k < 9; k++) {
+                    const x = 120 + k * 300 - cameraX * par;
+                    if (x < -80 || x > w + 80) continue;
+                    ctx.globalAlpha = 0.3;
+                    ctx.beginPath();
+                    ctx.roundRect(x, base - 30, 64, 36, 6);
+                    ctx.stroke();
+                    ctx.globalAlpha = 0.18;
+                    ctx.fillRect(x + 10, base - 20, 14, 16);
+                    ctx.fillRect(x + 40, base - 20, 14, 16);
+                }
+            } else if (idx === 3) {
+                ctx.lineWidth = 2;
+                for (let k = 0; k < 8; k++) {
+                    const x = 100 + k * 280 - cameraX * par;
+                    if (x < -80 || x > w + 80) continue;
+                    ctx.globalAlpha = 0.12;
+                    ctx.fillRect(x, base - 64, 60, 60);
+                    ctx.globalAlpha = 0.3;
+                    ctx.strokeRect(x, base - 64, 60, 60);
+                    for (let p = 0; p < 4; p++) {
+                        ctx.beginPath();
+                        ctx.moveTo(x - 8, base - 54 + p * 14);
+                        ctx.lineTo(x, base - 54 + p * 14);
+                        ctx.moveTo(x + 60, base - 54 + p * 14);
+                        ctx.lineTo(x + 68, base - 54 + p * 14);
+                        ctx.stroke();
+                    }
+                }
+            } else {
+                ctx.lineWidth = 3;
+                for (let k = 0; k < 8; k++) {
+                    const x = 150 + k * 320 - cameraX * par;
+                    if (x < -40 || x > w + 40) continue;
+                    ctx.globalAlpha = 0.18 + 0.12 * Math.abs(Math.sin(t * 2 + k));
+                    ctx.beginPath();
+                    ctx.moveTo(x, 20);
+                    ctx.lineTo(x + 14, 70);
+                    ctx.lineTo(x - 4, 70);
+                    ctx.lineTo(x + 10, 130);
+                    ctx.stroke();
+                }
+            }
+            ctx.restore();
+        }
+
+        function renderScene() {
+            const w = canvas.width;
+            const h = canvas.height;
+            const theme = FLOOR_THEMES[(gameState.floor - 1) % FLOOR_THEMES.length];
+
+            // Background Gradient
+            const grad = ctx.createLinearGradient(0, 0, 0, h);
+            grad.addColorStop(0, theme.bg1);
+            grad.addColorStop(1, theme.bg2);
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, w, h);
+
+            // Parallax Circuit Board Grid Lines
+            ctx.save();
+            ctx.strokeStyle = "rgba(255,255,255,0.04)";
+            ctx.lineWidth = 2;
+            const gridOffset = -(cameraX * 0.3) % 80;
+            for (let gx = gridOffset; gx < w; gx += 80) {
+                ctx.beginPath();
+                ctx.moveTo(gx, 0);
+                ctx.lineTo(gx, h);
+                ctx.stroke();
+            }
+
+            drawBackdrop((gameState.floor - 1) % FLOOR_THEMES.length, theme, w, h);
+            ctx.restore();
+
+            ctx.save();
+            ctx.translate(-cameraX, 0);
+
+            // Draw Platforms
+            for (const plat of platforms) {
+                if (plat.isGround) {
+                    ctx.fillStyle = "#1e293b";
+                    ctx.fillRect(plat.x, plat.y, plat.w, plat.h);
+                    ctx.fillStyle = theme.crystal;
+                    ctx.fillRect(plat.x, plat.y, plat.w, 4);
+                } else {
+                    ctx.fillStyle = "#334155";
+                    ctx.beginPath();
+                    ctx.roundRect(plat.x, plat.y, plat.w, plat.h, 8);
+                    ctx.fill();
+                    ctx.strokeStyle = theme.crystal;
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
+            }
+
+            // Draw ESD Static Hazards
+            for (const s of spikes) {
+                ctx.fillStyle = "#f43f5e";
+                ctx.beginPath();
+                ctx.moveTo(s.x, s.y + s.h);
+                ctx.lineTo(s.x + s.w / 2, s.y);
+                ctx.lineTo(s.x + s.w, s.y + s.h);
+                ctx.closePath();
+                ctx.fill();
+                ctx.font = "12px sans-serif";
+                ctx.textAlign = "center";
+                ctx.fillText("⚡", s.x + s.w / 2, s.y - 4);
+            }
+
+            // Paket data liar (bergerak)
+            for (const pt of patrols) {
+                ctx.fillStyle = "rgba(0,0,0,0.35)";
+                ctx.beginPath();
+                ctx.ellipse(pt.x + pt.w / 2, pt.y + pt.h, 18, 4, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = "#ea580c";
+                ctx.beginPath();
+                ctx.roundRect(pt.x, pt.y, pt.w, pt.h, 8);
+                ctx.fill();
+                ctx.strokeStyle = "#fed7aa";
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                ctx.font = "18px sans-serif";
+                ctx.textAlign = "center";
+                ctx.fillText(pt.icon, pt.x + pt.w / 2, pt.y + 22);
+            }
+
+            // Laser berkedip
+            for (const lz of lasers) {
+                const phase = laserPhase(lz);
+                const active = phase < lz.on;
+                const warn = !active && phase >= lz.cycle - 30 && Math.floor(hazardTick / 4) % 2 === 0;
+                ctx.fillStyle = "#475569";
+                ctx.fillRect(lz.x - 6, lz.y - 8, lz.w + 12, 8);
+                ctx.fillRect(lz.x - 6, lz.y + lz.h, lz.w + 12, 6);
+                if (active) {
+                    ctx.save();
+                    ctx.shadowColor = "#f43f5e";
+                    ctx.shadowBlur = 14;
+                    ctx.fillStyle = "#fb7185";
+                    ctx.fillRect(lz.x, lz.y, lz.w, lz.h);
+                    ctx.fillStyle = "#ffe4e6";
+                    ctx.fillRect(lz.x + 5, lz.y, 4, lz.h);
+                    ctx.restore();
+                } else if (warn) {
+                    ctx.fillStyle = "rgba(251, 113, 133, 0.45)";
+                    ctx.fillRect(lz.x + 5, lz.y, 4, lz.h);
+                }
+            }
+
+            // Draw Collectible Chips
+            for (const c of coins) {
+                if (c.collected) continue;
+                const floatY = c.y + Math.sin(Date.now() / 250 + c.x) * 4;
+                ctx.fillStyle = "#fbbf24";
+                ctx.beginPath();
+                ctx.arc(c.x, floatY, 13, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = "#fef08a";
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                ctx.fillStyle = "#0f172a";
+                ctx.font = "bold 8px sans-serif";
+                ctx.textAlign = "center";
+                ctx.fillText(c.label, c.x, floatY + 3);
+            }
+
+            // Draw Exit Door
+            if (door) {
+                ctx.fillStyle = door.unlocked ? "#10b981" : "#78350f";
+                ctx.beginPath();
+                ctx.roundRect(door.x, door.y, door.w, door.h, [14, 14, 0, 0]);
+                ctx.fill();
+                ctx.strokeStyle = door.unlocked ? "#6ee7b7" : "#f59e0b";
+                ctx.lineWidth = 3;
+                ctx.stroke();
+
+                ctx.fillStyle = "#ffffff";
+                ctx.font = "bold 11px sans-serif";
+                ctx.textAlign = "center";
+                ctx.fillText(`LANTAI ${gameState.floor}`, door.x + door.w / 2, door.y - 8);
+                ctx.font = "22px sans-serif";
+                ctx.fillText(door.unlocked ? "🚪" : "🔒", door.x + door.w / 2, door.y + 45);
+            }
+
+            // Draw Monster
+            if (monster && !monster.defeated) {
+                const my = monster.y + monster.bobOffset;
+                // Shadow
+                ctx.fillStyle = "rgba(0,0,0,0.4)";
+                ctx.beginPath();
+                ctx.ellipse(monster.x + monster.w / 2, monster.y + monster.h, 24, 6, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Monster Body
+                ctx.fillStyle = "#4c1d95";
+                ctx.beginPath();
+                ctx.roundRect(monster.x, my, monster.w, monster.h, 16);
+                ctx.fill();
+                ctx.strokeStyle = "#f43f5e";
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                ctx.font = "30px sans-serif";
+                ctx.textAlign = "center";
+                ctx.fillText(monster.icon, monster.x + monster.w / 2, my + 38);
+
+                // Monster Name Tag
+                ctx.fillStyle = "#fda4af";
+                ctx.font = "bold 11px sans-serif";
+                ctx.fillText(monster.name, monster.x + monster.w / 2, my - 10);
+            }
+
+            // Draw Player Hero
+            ctx.save();
+            // Shadow
+            ctx.fillStyle = "rgba(0,0,0,0.4)";
+            ctx.beginPath();
+            ctx.ellipse(player.x + player.w / 2, player.y + player.h, 18, 5, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Cartoon Hero Character (Ksatria / Penyihir / Dokter / Pemanah)
+            const walkBob = Math.abs(player.vx) > 0.5 && player.grounded ? Math.sin(Date.now() / 80) * 2.5 : 0;
+            drawHeroCanvasCharacter(ctx, gameState.hero.id, player.x, player.y + walkBob, player.w, player.h, player.facing);
+
+            // Player Name Overhead
+            ctx.fillStyle = "#ffffff";
+            ctx.font = "bold 11px sans-serif";
+            ctx.textAlign = "center";
+            ctx.fillText(gameState.playerName, player.x + player.w / 2, player.y - 6);
+            ctx.restore();
+
+            ctx.restore();
+        }
+
+        /* =========================================================================
+           9. QUIZ / MONSTER BATTLE / DOOR UNLOCK LOGIC
+           ========================================================================= */
+        let currentQuizMode = 'monster'; // 'monster' or 'door'
+        let currentQuestionObj = null;
+        let quizTimerInterval = null;
+        let quizTimeLeft = 30;
+        let quizAnswered = false;
+
+        function getQuestionForFloor(floorNum) {
+            // Find questions matching this floor that haven't been used yet
+            let candidates = questionsList
+                .map((q, i) => ({ q, i }))
+                .filter(item => item.q.floor === floorNum && !gameState.usedQuestionIndices.has(item.i));
+
+            if (candidates.length === 0) {
+                candidates = questionsList
+                    .map((q, i) => ({ q, i }))
+                    .filter(item => !gameState.usedQuestionIndices.has(item.i));
+            }
+            if (candidates.length === 0) {
+                gameState.usedQuestionIndices.clear();
+                candidates = questionsList.map((q, i) => ({ q, i }));
+            }
+
+            const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+            gameState.usedQuestionIndices.add(chosen.i);
+            return chosen.q;
+        }
+
+        function triggerQuizChallenge(mode) {
+            gameState.paused = true;
+            resetInput();
+            currentQuizMode = mode;
+            quizAnswered = false;
+            currentQuestionObj = getQuestionForFloor(gameState.floor);
+
+            // Configure Modal Header
+            const isMonster = mode === 'monster';
+            document.getElementById('quiz-badge-icon').textContent = isMonster ? monster.icon : '🚪';
+            document.getElementById('quiz-context-title').textContent = isMonster
+                ? `Pertarungan Melawan ${monster.name}`
+                : `Pintu Gerbang Lantai ${gameState.floor}`;
+            document.getElementById('quiz-topic-label').textContent = currentQuestionObj.tp || activeSubject;
+
+            // Battle Arena visibility
+            const arena = document.getElementById('quiz-battle-arena');
+            if (isMonster) {
+                arena.classList.remove('hidden');
+                document.getElementById('battle-hero-emoji').innerHTML = getHeroCartoonSVG(gameState.hero.id);
+                document.getElementById('battle-hero-name').textContent = gameState.playerName;
+                document.getElementById('battle-hero-hp').style.width = `${(gameState.hp / gameState.maxHp) * 100}%`;
+                document.getElementById('battle-monster-emoji').textContent = monster.icon;
+                document.getElementById('battle-monster-name').textContent = monster.name;
+                document.getElementById('battle-monster-hp').style.width = '100%';
+            } else {
+                arena.classList.add('hidden');
+            }
+
+            // Question & Options
+            document.getElementById('quiz-question-text').textContent = currentQuestionObj.question;
+            const grid = document.getElementById('quiz-options-grid');
+            const letters = ['A', 'B', 'C', 'D'];
+            grid.innerHTML = currentQuestionObj.options.map((opt, idx) => `
+                <button onclick="submitQuizAnswer(${idx})" id="quiz-opt-${idx}" class="quiz-opt-btn text-left p-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 border-2 border-slate-700 transition flex items-start gap-2.5">
+                    <span class="w-6 h-6 rounded-lg bg-sky-500/20 text-sky-400 font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">${letters[idx]}</span>
+                    <span class="text-xs sm:text-sm text-white font-medium">${opt}</span>
+                </button>
+            `).join('');
+
+            // Reset Feedback & Continue button
+            document.getElementById('quiz-feedback').classList.add('hidden');
+            document.getElementById('btn-quiz-continue').classList.add('hidden');
+            document.getElementById('btn-quiz-hint').disabled = gameState.hints <= 0;
+            document.getElementById('btn-quiz-hint').classList.toggle('opacity-40', gameState.hints <= 0);
+
+            // Start Timer
+            quizTimeLeft = 30 + gameState.hero.extraTime;
+            document.getElementById('quiz-timer').textContent = quizTimeLeft;
+            clearInterval(quizTimerInterval);
+            quizTimerInterval = setInterval(() => {
+                quizTimeLeft--;
+                document.getElementById('quiz-timer').textContent = quizTimeLeft;
+                if (quizTimeLeft <= 0) {
+                    clearInterval(quizTimerInterval);
+                    submitQuizAnswer(-1); // Time out
+                }
+            }, 1000);
+
+            openModal('modal-quiz');
+        }
+
+        function useQuizHint() {
+            if (quizAnswered || gameState.hints <= 0) return;
+            gameState.hints--;
+            updateHUD();
+            document.getElementById('btn-quiz-hint').disabled = true;
+            document.getElementById('btn-quiz-hint').classList.add('opacity-40');
+
+            // Eliminate 2 wrong options
+            const wrongIndices = [0, 1, 2, 3].filter(i => i !== currentQuestionObj.correctIndex);
+            wrongIndices.slice(0, 2).forEach(idx => {
+                const btn = document.getElementById(`quiz-opt-${idx}`);
+                if (btn) {
+                    btn.disabled = true;
+                    btn.classList.add('opacity-30', 'line-through');
+                }
+            });
+            playSfx('coin');
+        }
+
+        function submitQuizAnswer(selectedIdx) {
+            if (quizAnswered) return;
+            quizAnswered = true;
+            clearInterval(quizTimerInterval);
+
+            const isCorrect = selectedIdx === currentQuestionObj.correctIndex;
+            gameState.totalAnswered++;
+
+            // Highlight buttons
+            [0, 1, 2, 3].forEach(idx => {
+                const btn = document.getElementById(`quiz-opt-${idx}`);
+                if (!btn) return;
+                btn.disabled = true;
+                if (idx === currentQuestionObj.correctIndex) {
+                    btn.classList.remove('bg-slate-800', 'border-slate-700');
+                    btn.classList.add('bg-emerald-900/70', 'border-emerald-400');
+                } else if (idx === selectedIdx && !isCorrect) {
+                    btn.classList.remove('bg-slate-800', 'border-slate-700');
+                    btn.classList.add('bg-rose-900/70', 'border-rose-500');
+                }
+            });
+
+            const fbBox = document.getElementById('quiz-feedback');
+            const fbTitle = document.getElementById('quiz-feedback-title');
+            const fbDesc = document.getElementById('quiz-feedback-desc');
+            fbBox.classList.remove('hidden', 'bg-emerald-950/80', 'border-emerald-500', 'bg-rose-950/80', 'border-rose-500');
+
+            if (isCorrect) {
+                gameState.totalCorrect++;
+                const earned = Math.round((100 + quizTimeLeft * 2) * gameState.hero.bonusScore);
+                gameState.score += earned;
+                if (gameState.hero.healOnCorrect > 0) {
+                    gameState.hp = Math.min(gameState.maxHp, gameState.hp + gameState.hero.healOnCorrect);
+                }
+
+                playSfx('correct');
+                fbBox.classList.add('bg-emerald-950/80', 'border', 'border-emerald-500');
+                fbTitle.textContent = `✅ TEPAT SEKALI! (+${earned} Poin)`;
+                fbTitle.className = "font-bold mb-1 text-emerald-400";
+
+                if (currentQuizMode === 'monster') {
+                    document.getElementById('battle-monster-hp').style.width = '0%';
+                    monster.defeated = true;
+                } else {
+                    door.unlocked = true;
+                }
+            } else {
+                gameState.hp = Math.max(0, gameState.hp - 25);
+                playSfx('wrong');
+                fbBox.classList.add('bg-rose-950/80', 'border', 'border-rose-500');
+                fbTitle.textContent = selectedIdx === -1 ? "⏰ WAKTU HABIS! (-25 HP)" : "❌ KURANG TEPAT! (-25 HP)";
+                fbTitle.className = "font-bold mb-1 text-rose-400";
+                document.getElementById('battle-hero-hp').style.width = `${(gameState.hp / gameState.maxHp) * 100}%`;
+
+                // Even if wrong, push player slightly back or allow retry/advance if HP > 0
+                if (currentQuizMode === 'monster') {
+                    player.x = Math.max(40, monster.x - 90);
+                } else {
+                    player.x = Math.max(40, door.x - 90);
+                }
+                const safeTop = surfaceTopAt(player.x);
+                if (safeTop !== null) { player.y = safeTop - player.h; player.vy = 0; player.grounded = true; }
+            }
+
+            fbDesc.textContent = currentQuestionObj.explanation || "Terus semangat mempelajari perangkat keras komputer!";
+            updateHUD();
+            saveGameProgress();
+            document.getElementById('btn-quiz-continue').classList.remove('hidden');
+        }
+
+        function closeQuizModal() {
+            closeModal('modal-quiz');
+            gameState.paused = false;
+
+            if (gameState.hp <= 0) {
+                clearSavedProgress();
+                triggerVictoryOrGameOver(false);
+                return;
+            }
+
+            if (currentQuizMode === 'door' && door && door.unlocked) {
+                playSfx('door');
+                if (gameState.floor < gameState.maxFloors) {
+                    gameState.floor++;
+                    saveGameProgress();
+                    showGameToast(`🎉 Lantai ${gameState.floor} Terbuka! Tempat dan rintangan baru menanti.`);
+                    buildFloor(gameState.floor);
+                } else {
+                    clearSavedProgress();
+                    triggerVictoryOrGameOver(true);
+                }
+            }
+        }
+
+        function triggerVictoryOrGameOver(isWin) {
+            gameState.running = false;
+            document.getElementById('victory-title').textContent = isWin ? "🏆 LABIRIN DITAKLUKKAN!" : "💥 ENERGI HABIS (GAME OVER)";
+            document.getElementById('victory-subtitle').textContent = isWin
+                ? `Selamat ${gameState.playerName}! Kamu telah menamatkan seluruh lantai labirin.`
+                : `Jangan menyerah ${gameState.playerName}! Baca Modul Flipbook dan coba lagi.`;
+
+            document.getElementById('final-score').textContent = Math.round(gameState.score);
+            document.getElementById('final-correct').textContent = `${gameState.totalCorrect} / ${gameState.totalAnswered}`;
+
+            const ratio = gameState.totalAnswered > 0 ? gameState.totalCorrect / gameState.totalAnswered : 0;
+            let grade = "Pemula TJKT";
+            if (isWin && ratio >= 0.8) grade = "Master Teknisi";
+            else if (ratio >= 0.6) grade = "Teknisi Andal";
+            document.getElementById('final-grade').textContent = grade;
+
+            openModal('modal-victory');
+        }
+
+        function copyResultSummary() {
+            const reflection = document.getElementById('reflection-input').value.trim() || "(Belum diisi)";
+            const text = `=== LAPORAN HARD-EXPLORER (SMK TJKT) ===\nNama Siswa: ${gameState.playerName}\nKarakter: ${gameState.hero.name} (${gameState.hero.role})\nPaket Materi: ${activeSubject}\nSkor Akhir: ${Math.round(gameState.score)}\nJawaban Benar: ${gameState.totalCorrect}/${gameState.totalAnswered}\nRefleksi Pembelajaran: ${reflection}`;
+
+            const fallbackCopy = () => {
+                const tempArea = document.createElement('textarea');
+                tempArea.value = text;
+                tempArea.style.position = 'fixed';
+                tempArea.style.opacity = '0';
+                document.body.appendChild(tempArea);
+                tempArea.select();
+                try { document.execCommand('copy'); } catch (e) {}
+                tempArea.remove();
+            };
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(text).catch(fallbackCopy);
+            } else {
+                fallbackCopy();
+            }
+
+            const fb = document.getElementById('copy-feedback');
+            fb.classList.remove('hidden');
+            setTimeout(() => fb.classList.add('hidden'), 3000);
+        }
+
+        function confirmExitGame() {
+            openModal('modal-confirm-exit');
+        }
+
+        function saveAndExitGame() {
+            saveGameProgress();
+            returnToMainMenu();
+        }
+
+        function returnToMainMenu() {
+            gameState.running = false;
+            startBgm('menu');
+            closeModal('modal-confirm-exit');
+            closeModal('modal-victory');
+            refreshContinueButton();
+            showScreen('screen-menu');
+        }
+
+        /* =========================================================================
+           10. KEYBOARD & TOUCH CONTROLS BINDING
+           ========================================================================= */
+        const GAME_KEYS = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'KeyA', 'KeyD', 'KeyW', 'Space'];
+        function isTypingTarget(t) {
+            return t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT');
+        }
+
+        window.addEventListener('keydown', (e) => {
+            if (isTypingTarget(e.target)) return;
+            if (gameState.running && GAME_KEYS.includes(e.code)) e.preventDefault();
+            if (e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = true;
+            if (e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = true;
+            if (e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Space') keys.up = true;
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = false;
+            if (e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = false;
+            if (e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Space') keys.up = false;
+        });
+
+        window.addEventListener('blur', resetInput);
+        document.addEventListener('visibilitychange', () => { if (document.hidden) resetInput(); });
+
+        // Tombol layar (versi desktop) dan tombol lompat sentuh
+        function bindHoldButton(btnId, keyName) {
+            const btn = document.getElementById(btnId);
+            if (!btn) return;
+            const down = (e) => {
+                e.preventDefault();
+                keys[keyName] = true;
+                btn.classList.add('pressed');
+                if (e.pointerId !== undefined && btn.setPointerCapture) { try { btn.setPointerCapture(e.pointerId); } catch (err) {} }
+            };
+            const up = (e) => {
+                e.preventDefault();
+                keys[keyName] = false;
+                btn.classList.remove('pressed');
+            };
+            btn.addEventListener('pointerdown', down);
+            btn.addEventListener('pointerup', up);
+            btn.addEventListener('pointercancel', up);
+            btn.addEventListener('lostpointercapture', up);
+            btn.addEventListener('contextmenu', (e) => e.preventDefault());
+        }
+
+        bindHoldButton('ctrl-left', 'left');
+        bindHoldButton('ctrl-right', 'right');
+        bindHoldButton('ctrl-jump', 'up');
+        bindHoldButton('tc-jump', 'up');
+
+        // Joystick analog virtual (kiri / kanan)
+        (function setupJoystick() {
+            const base = document.getElementById('joy-base');
+            const knob = document.getElementById('joy-knob');
+            if (!base || !knob) return;
+            const DEAD = 0.18;
+
+            function update(e) {
+                const r = base.getBoundingClientRect();
+                const cx = r.left + r.width / 2;
+                const cy = r.top + r.height / 2;
+                const limit = r.width * 0.36;
+                let dx = e.clientX - cx;
+                let dy = e.clientY - cy;
+                const dist = Math.hypot(dx, dy);
+                if (dist > limit) { dx *= limit / dist; dy *= limit / dist; }
+                knob.style.transform = `translate(${dx}px, ${dy}px)`;
+                let v = dx / limit;
+                const mag = Math.abs(v);
+                v = mag < DEAD ? 0 : Math.sign(v) * (mag - DEAD) / (1 - DEAD);
+                joy.x = v;
+            }
+            function release(e) {
+                if (joy.id !== null && e.pointerId !== joy.id) return;
+                joy.id = null;
+                joy.x = 0;
+                knob.style.transform = 'translate(0px, 0px)';
+            }
+            base.addEventListener('pointerdown', (e) => {
+                e.preventDefault();
+                if (joy.id !== null) return;
+                joy.id = e.pointerId;
+                try { base.setPointerCapture(e.pointerId); } catch (err) {}
+                update(e);
+            });
+            base.addEventListener('pointermove', (e) => {
+                if (e.pointerId !== joy.id) return;
+                e.preventDefault();
+                update(e);
+            });
+            base.addEventListener('pointerup', release);
+            base.addEventListener('pointercancel', release);
+            base.addEventListener('lostpointercapture', release);
+            base.addEventListener('contextmenu', (e) => e.preventDefault());
+        })();
+
+        // Tombol aksi (buka pintu / lawan monster)
+        function doAction() {
+            if (!gameState.running || gameState.paused) return;
+            const feetY = player.y + player.h;
+            if (monster && !monster.defeated &&
+                Math.abs(player.x - monster.x) < 120 && Math.abs(feetY - (monster.y + monster.h)) < 40) {
+                triggerQuizChallenge('monster');
+            } else if (door && Math.abs(player.x - door.x) < 120 && Math.abs(feetY - (door.y + door.h)) < 40) {
+                if (monster && !monster.defeated) showGameToast(`🔒 Kalahkan ${monster.name} dulu!`);
+                else if (!door.unlocked) triggerQuizChallenge('door');
+            } else {
+                showGameToast("Dekati Monster atau Pintu untuk berinteraksi!");
+            }
+        }
+        document.getElementById('ctrl-action').addEventListener('click', doAction);
+        (function () {
+            const b = document.getElementById('tc-action');
+            b.addEventListener('pointerdown', (e) => { e.preventDefault(); b.classList.add('pressed'); doAction(); });
+            const off = () => b.classList.remove('pressed');
+            b.addEventListener('pointerup', off);
+            b.addEventListener('pointercancel', off);
+            b.addEventListener('contextmenu', (e) => e.preventDefault());
+        })();
+
+        // Initialize on load
+        window.onload = () => {
+            updateTouchUI();
+            loadSavedQuestions();
+            refreshContinueButton();
+            ['warrior', 'mage', 'healer', 'archer'].forEach(id => {
+                const el = document.getElementById(`preview-hero-${id}`);
+                if (el) el.innerHTML = getHeroCartoonSVG(id);
+            });
+        };
+    </script>
+</body>
+</html>
